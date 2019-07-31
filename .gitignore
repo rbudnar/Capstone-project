@@ -261,3 +261,8 @@ __pycache__/
 *.pyc
 
 *.png
+
+
+.mypy_cache/*.*
+saved_models/*.*
+.ipynb_checkpoints/*.*
