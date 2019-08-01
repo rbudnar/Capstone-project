@@ -12,3 +12,10 @@ def generate_dataframe_from_csv(path):
 def gen_image_paths(row):
     path_root = f"train/{row['experiment']}/Plate{row['plate']}/{row['well']}"
     return [f"{path_root}_s{site}_w{image}.png" for site in range(1, 3) for image in range(1,7)]
+
+
+# nums = []
+# for i in range(0, 6):
+#     nums.append(i)
+
+# print(nums)
