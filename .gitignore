@@ -266,3 +266,5 @@ __pycache__/
 .mypy_cache/*.*
 saved_models/*.*
 .ipynb_checkpoints/*.*
+wandb/**/*.*
+logs/**/*.*
