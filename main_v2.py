@@ -5,44 +5,41 @@ import matplotlib.pyplot as plt
 from IPython.display import display # Allows the use of display() for DataFrames
 import seaborn as sb
 
-# import keras
-from tensorflow import keras
-from tensorflow import keras
-from tensorflow.keras import optimizers
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Activation, Dropout, Flatten, Dense, Add, Concatenate, BatchNormalization
-# from tensorflow.keras.layers.normalization import BatchNormalization
-from tensorflow.keras.callbacks import ModelCheckpoint
-# from keras import optimizers
-# from keras.preprocessing.image import ImageDataGenerator
-# from keras.models import Sequential, Model
-# from keras.layers import Input, Conv2D, MaxPooling2D, Activation, Dropout, Flatten, Dense, Add, Concatenate
-# from keras.layers.normalization import BatchNormalization
-# from keras.callbacks import ModelCheckpoint
+# from tensorflow import keras
+# from tensorflow.keras import optimizers
+# from tensorflow.keras.preprocessing.image import ImageDataGenerator
+# from tensorflow.keras.models import Sequential, Model
+# from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Activation, Dropout, Flatten, Dense, Add, Concatenate, BatchNormalization
+# from tensorflow.keras.callbacks import ModelCheckpoint
+
+import keras
+from keras import optimizers
+from keras.preprocessing.image import ImageDataGenerator
+from keras.models import Sequential, Model
+from keras.layers import Input, Conv2D, MaxPooling2D, Activation, Dropout, Flatten, Dense, Add, Concatenate, BatchNormalization, GlobalAveragePooling2D
+from keras.callbacks import ModelCheckpoint
+from keras.regularizers import l2
 import timeit
 import os
 import tensorflow as tf
 
-logdir = os.path.join("logs")
-tensorboard_callback = keras.callbacks.TensorBoard(log_dir=logdir)
-HEIGHT = 150
-WIDTH = 150
+HEIGHT = 224
+WIDTH = 224
 INPUTS = 1
 ## loading from dataframe https://medium.com/@vijayabhaskar96/tutorial-on-keras-flow-from-dataframe-1fd4493d237c
 
-# def generate_dataframe_from_csv(path):
-#     data = pd.read_csv(path)
-#     columns = (data.apply(lambda r: pd.Series(gen_image_paths(r)), axis=1)
-#         .stack()
-#         .rename("img_path")
-#         .reset_index(level=1, drop=True))
-#     data["sirna"] = data["sirna"].apply(lambda s: str(s))
-#     return data.join(columns).reset_index(drop=True)
+def generate_dataframe_from_csv_vertical(path, inputs=INPUTS):
+    data = pd.read_csv(path)
+    columns = (data.apply(lambda r: pd.Series(gen_image_paths_vertical(r, inputs)), axis=1)
+        .stack()
+        .rename("img_path")
+        .reset_index(level=1, drop=True))
+    data["sirna"] = data["sirna"].apply(lambda s: str(s))
+    return data.join(columns).reset_index(drop=True)
 
-# def gen_image_paths(row):
-#     path_root = f"train/{row['experiment']}/Plate{row['plate']}/{row['well']}"
-#     return [f"{path_root}_s{site}_w{image}.png" for site in range(1, 3) for image in range(1,7)]
+def gen_image_paths_vertical(row, inputs=INPUTS):
+    path_root = f"train/{row['experiment']}/Plate{row['plate']}/{row['well']}"
+    return [f"{path_root}_s{site}_w{image}.png" for site in range(1, 3) for image in range(1,1+inputs)]
 
 
 # def generate_dataframe_from_csv2(path):
@@ -54,20 +51,20 @@ INPUTS = 1
 #     data["sirna"] = data["sirna"].apply(lambda s: str(s))
 #     return data.join(columns).reset_index(drop=True)
 
-def gen_image_paths2(row):
+def gen_image_paths_horizontal(row):
     path_root = f"train/{row['experiment']}/Plate{row['plate']}/{row['well']}"
     return [f"{path_root}_s{site}" for site in range(1, 3)] 
 
-def generate_dataframe_from_csv3(path):
+def generate_dataframe_from_csv_horizontal(path, inputs=INPUTS):
     data = pd.read_csv(path)
-    columns = (data.apply(lambda r: pd.Series(gen_image_paths2(r)), axis=1)
+    columns = (data.apply(lambda r: pd.Series(gen_image_paths_horizontal(r)), axis=1)
         .stack()
         .rename("img_path")
         .reset_index(level=1, drop=True))
     data["sirna"] = data["sirna"].apply(lambda s: str(s))
     data = data.join(columns).reset_index(drop=True)
     
-    for i in range(1,1+INPUTS):
+    for i in range(1,1+inputs):
         data[f"img_path_{i}"] = data.apply(lambda row: f"{row['img_path']}_w{i}.png", axis=1)
     return data
 
@@ -105,26 +102,40 @@ def create_multi_generator(df, train_datagen, subset):
 def build_cnn_layer(i, shape=(HEIGHT,WIDTH,3,)):
     name = f"inputlayer_{i}"
     inputlayer = Input(shape=shape, name=name)
-    x = Conv2D(filters=64, kernel_size=3, padding='same', activation='relu')(inputlayer)
+
+    x = Conv2D(filters=16, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(inputlayer)
     x = BatchNormalization(name=f"bn_cnn_1_{i}")(x)
     x = MaxPooling2D(pool_size=2)(x)
-    
-    x = Conv2D(filters=128, kernel_size=3, padding='same', activation='relu')(x)
+
+    x = Conv2D(filters=32, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(x)
     x = BatchNormalization(name=f"bn_cnn_2_{i}")(x)
     x = MaxPooling2D(pool_size=2)(x)
-    
-    x = Conv2D(filters=256, kernel_size=3, padding='same', activation='relu')(x)
+
+    x = Conv2D(filters=64, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(x)
     x = BatchNormalization(name=f"bn_cnn_3_{i}")(x)
     x = MaxPooling2D(pool_size=2)(x)
+    
+    x = Conv2D(filters=128, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(x)
+    x = BatchNormalization(name=f"bn_cnn_4_{i}")(x)
+    x = MaxPooling2D(pool_size=2)(x)
+    
+    x = Conv2D(filters=256, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(x)
+    x = BatchNormalization(name=f"bn_cnn_5_{i}")(x)
+    x = MaxPooling2D(pool_size=2)(x)
 
-    # x = Conv2D(filters=512, kernel_size=3, padding='same', activation='relu')(x)
-    # x = BatchNormalization(name=f"bn_cnn_4_{i}")(x)
+    x = Conv2D(filters=512, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(x)
+    x = BatchNormalization(name=f"bn_cnn_6_{i}")(x)
+    x = MaxPooling2D(pool_size=2)(x)
+
+    # x = Conv2D(filters=1024, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(x)
+    # x = BatchNormalization(name=f"bn_cnn_7_{i}")(x)
     # x = MaxPooling2D(pool_size=2)(x)
 
-    # x = Conv2D(filters=1024, kernel_size=3, padding='same', activation='relu')(x)
+    # x = Conv2D(filters=2048, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(x)
     # x = BatchNormalization(name=f"bn_cnn_5_{i}")(x)
     # x = MaxPooling2D(pool_size=2)(x)
-    
+
+
     # x = Conv2D(filters=64, kernel_size=3, padding='same')(inputlayer)
     # x = Activation("relu")(x)
     # x = BatchNormalization(name=f"bn_cnn_1_{i}")(x)
@@ -140,17 +151,10 @@ def build_cnn_layer(i, shape=(HEIGHT,WIDTH,3,)):
     # x = BatchNormalization(name=f"bn_cnn_3_{i}")(x)
     # x = MaxPooling2D(pool_size=2)(x)
     
-    # x = Conv2D(filters=512, kernel_size=3, padding='same')(x)
-    # x = Activation("relu")(x)
-    # x = BatchNormalization(name=f"bn_cnn_4_{i}")(x)
-    # x = MaxPooling2D(pool_size=2)(x)
-    
-    # x = Conv2D(filters=1024, kernel_size=3, padding='same')(x)
-    # x = Activation("relu")(x)
-    # x = BatchNormalization(name=f"bn_cnn_5_{i}")(x)
-    # x = MaxPooling2D(pool_size=2)(x)
-
     x = Flatten(name=f"flattener_{i}")(x)
+    x = Dense(2000, activation="relu")(x)
+    x = BatchNormalization(name="bn_fc_1")(x)
+    x = Dropout(0.25)(x)
     x = Dense(1108, activation="softmax")(x)
     model = Model(inputs=inputlayer, outputs=x)
     return model
@@ -159,9 +163,53 @@ def build_sequential_layer(previous_layers):
     combined = Concatenate()([x.output for x in previous_layers])
     combined = BatchNormalization(name="batch_norm_1")(combined)
     combined = Activation("relu", name="act_layer")(combined)
-    z = Dense(2000, activation="softmax")(combined)
+    z = Dense(2000, activation="relu")(combined)
     z = Dense(1108, activation="softmax")(combined)
     return z
+
+
+## https://towardsdatascience.com/why-default-cnn-are-broken-in-keras-and-how-to-fix-them-ce295e5e5f2
+
+def ConvBlock(n_conv, n_out, shape, x, is_last=False):
+    for i in range(n_conv):
+        x = Conv2D(n_out, shape, padding='same', kernel_initializer="he_uniform", activation='relu')(x) #
+        x = BatchNormalization()(x)
+    
+    if is_last: out = GlobalAveragePooling2D()(x)  
+    else: out = MaxPooling2D()(x)
+        
+    return out
+
+## VGG16 
+# def build_cnn_layer_2(i, shape=(HEIGHT,WIDTH,3,)):
+#     inputlayer = Input(shape=shape)
+#     x = ConvBlock(2, 64, (3,3), inputlayer)
+#     x = ConvBlock(2, 128, (3,3), x)
+#     x = ConvBlock(3, 256, (3,3), x)
+#     x = ConvBlock(3, 512, (3,3), x)
+#     x = ConvBlock(3, 512, (3,3), x, is_last=True)
+
+#     x = Dense(1108, activation='softmax')(x)
+#     model = Model(inputlayer, x)
+#     return model
+
+def build_cnn_layer_2(i, shape=(HEIGHT,WIDTH,3,)):
+    inputlayer = Input(shape=shape)
+    x = ConvBlock(1, 64, (5,5), inputlayer)
+    x = ConvBlock(1, 64, (3,3), x)
+    x = ConvBlock(1, 128, (3,3), x)
+    x = ConvBlock(1, 256, (3,3), x)
+    x = ConvBlock(1, 512, (3,3), x)
+    # x = ConvBlock(1, 1024, (3,3), x)
+    x = ConvBlock(1, 512, (3,3), x, is_last=True)
+
+
+    x = Dense(1000, kernel_regularizer=l2(0.001), activation="relu")(x) # 
+    x = BatchNormalization(name="bn_fc_1")(x)
+    x = Dropout(0.3)(x)
+    x = Dense(1108, kernel_regularizer=l2(0.001), activation='softmax')(x) # kernel_regularizer=l2(0.01),
+    model = Model(inputlayer, x)
+    return model
 
 # def build_model():
 #     cnn_layers = []
@@ -175,12 +223,13 @@ def build_sequential_layer(previous_layers):
 #     model.compile(optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
 #     return model
 
-def build_model():
+def build_model(height=HEIGHT, width=WIDTH):
     # cnn_layers = []
     # for i in range(0, INPUTS):
     #     layer = build_cnn_layer(i)
     #     cnn_layers.append(layer)
-    model = build_cnn_layer(1)
+    # model = build_cnn_layer(1, shape=(height, width, 3))
+    model = build_cnn_layer_2(1, shape=(height, width, 3))
     # output_layer = build_sequential_layer(cnn_layers)
     # combined = BatchNormalization(name="batch_norm_1")(layer)
     # combined = Activation("relu", name="act_layer")(combined)
