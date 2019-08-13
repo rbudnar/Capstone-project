@@ -23,9 +23,15 @@ import timeit
 import os
 import tensorflow as tf
 
+# from keras.applications.DenseNet121 import DenseNet121
+from keras.applications.densenet import DenseNet121
+from keras.applications.vgg16 import VGG16
+from keras.preprocessing import image
+from keras.applications.vgg16 import preprocess_input
+
 HEIGHT = 224
 WIDTH = 224
-INPUTS = 1
+INPUTS = 6
 ## loading from dataframe https://medium.com/@vijayabhaskar96/tutorial-on-keras-flow-from-dataframe-1fd4493d237c
 
 def generate_dataframe_from_csv_vertical(path, inputs=INPUTS):
@@ -41,21 +47,11 @@ def gen_image_paths_vertical(row, inputs=INPUTS):
     path_root = f"train/{row['experiment']}/Plate{row['plate']}/{row['well']}"
     return [f"{path_root}_s{site}_w{image}.png" for site in range(1, 3) for image in range(1,1+inputs)]
 
-
-# def generate_dataframe_from_csv2(path):
-#     data = pd.read_csv(path)
-#     columns = (data.apply(lambda r: pd.Series(gen_image_paths2(r)), axis=1)
-#         .stack()
-#         .rename("img_path")
-#         .reset_index(level=1, drop=True))
-#     data["sirna"] = data["sirna"].apply(lambda s: str(s))
-#     return data.join(columns).reset_index(drop=True)
-
 def gen_image_paths_horizontal(row):
     path_root = f"train/{row['experiment']}/Plate{row['plate']}/{row['well']}"
     return [f"{path_root}_s{site}" for site in range(1, 3)] 
 
-def generate_dataframe_from_csv_horizontal(path, inputs=INPUTS):
+def generate_dataframe_from_csv_horizontal(path, inputs=INPUTS, root_name_only=False):
     data = pd.read_csv(path)
     columns = (data.apply(lambda r: pd.Series(gen_image_paths_horizontal(r)), axis=1)
         .stack()
@@ -64,13 +60,10 @@ def generate_dataframe_from_csv_horizontal(path, inputs=INPUTS):
     data["sirna"] = data["sirna"].apply(lambda s: str(s))
     data = data.join(columns).reset_index(drop=True)
     
-    for i in range(1,1+inputs):
-        data[f"img_path_{i}"] = data.apply(lambda row: f"{row['img_path']}_w{i}.png", axis=1)
+    if not root_name_only:
+        for i in range(1,1+inputs):
+            data[f"img_path_{i}"] = data.apply(lambda row: f"{row['img_path']}_w{i}.png", axis=1)
     return data
-
-# def gen_image_paths3(row):
-#     path_root = f"train/{row['experiment']}/Plate{row['plate']}/{row['well']}"
-#     return [f"{path_root}_s{site}" for site in range(1, 3)] 
 
 def get_model_inputs(df):
     trainY = df["sirna"]
@@ -103,29 +96,32 @@ def build_cnn_layer(i, shape=(HEIGHT,WIDTH,3,)):
     name = f"inputlayer_{i}"
     inputlayer = Input(shape=shape, name=name)
 
-    x = Conv2D(filters=16, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(inputlayer)
+    # x = Conv2D(filters=16, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(inputlayer)
+    # x = BatchNormalization(name=f"bn_cnn_1_{i}")(x)
+    # x = MaxPooling2D(pool_size=2)(x)
+
+    # x = Conv2D(filters=32, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(x)
+    # x = BatchNormalization(name=f"bn_cnn_2_{i}")(x)
+    # x = MaxPooling2D(pool_size=2)(x)
+    x = Conv2D(filters=32, kernel_size=5, padding='same', kernel_initializer="he_uniform", activation='relu')(inputlayer)
     x = BatchNormalization(name=f"bn_cnn_1_{i}")(x)
     x = MaxPooling2D(pool_size=2)(x)
 
-    x = Conv2D(filters=32, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(x)
-    x = BatchNormalization(name=f"bn_cnn_2_{i}")(x)
-    x = MaxPooling2D(pool_size=2)(x)
-
     x = Conv2D(filters=64, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(x)
-    x = BatchNormalization(name=f"bn_cnn_3_{i}")(x)
+    x = BatchNormalization(name=f"bn_cnn_2_{i}")(x)
     x = MaxPooling2D(pool_size=2)(x)
     
     x = Conv2D(filters=128, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(x)
-    x = BatchNormalization(name=f"bn_cnn_4_{i}")(x)
+    x = BatchNormalization(name=f"bn_cnn_3_{i}")(x)
     x = MaxPooling2D(pool_size=2)(x)
     
     x = Conv2D(filters=256, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(x)
-    x = BatchNormalization(name=f"bn_cnn_5_{i}")(x)
+    x = BatchNormalization(name=f"bn_cnn_4_{i}")(x)
     x = MaxPooling2D(pool_size=2)(x)
 
     x = Conv2D(filters=512, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(x)
-    x = BatchNormalization(name=f"bn_cnn_6_{i}")(x)
-    x = MaxPooling2D(pool_size=2)(x)
+    x = BatchNormalization(name=f"bn_cnn_5_{i}")(x)
+    x = GlobalAveragePooling2D()(x)
 
     # x = Conv2D(filters=1024, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(x)
     # x = BatchNormalization(name=f"bn_cnn_7_{i}")(x)
@@ -151,11 +147,12 @@ def build_cnn_layer(i, shape=(HEIGHT,WIDTH,3,)):
     # x = BatchNormalization(name=f"bn_cnn_3_{i}")(x)
     # x = MaxPooling2D(pool_size=2)(x)
     
-    x = Flatten(name=f"flattener_{i}")(x)
-    x = Dense(2000, activation="relu")(x)
-    x = BatchNormalization(name="bn_fc_1")(x)
-    x = Dropout(0.25)(x)
-    x = Dense(1108, activation="softmax")(x)
+    # x = Flatten(name=f"flattener_{i}")(x)
+    # x = Dense(2000, activation="relu")(x)
+    # x = BatchNormalization(name="bn_fc_1")(x)
+    # x = Dropout(0.25)(x)
+    # x = Dense(1108, activation="softmax")(x)
+
     model = Model(inputs=inputlayer, outputs=x)
     return model
 
@@ -163,7 +160,7 @@ def build_sequential_layer(previous_layers):
     combined = Concatenate()([x.output for x in previous_layers])
     combined = BatchNormalization(name="batch_norm_1")(combined)
     combined = Activation("relu", name="act_layer")(combined)
-    z = Dense(2000, activation="relu")(combined)
+    # z = Dense(2000, activation="relu")(combined)
     z = Dense(1108, activation="softmax")(combined)
     return z
 
@@ -195,14 +192,27 @@ def ConvBlock(n_conv, n_out, shape, x, is_last=False):
 
 def build_cnn_layer_2(i, shape=(HEIGHT,WIDTH,3,)):
     inputlayer = Input(shape=shape)
-    x = ConvBlock(1, 64, (5,5), inputlayer)
-    x = ConvBlock(1, 64, (3,3), x)
-    x = ConvBlock(1, 128, (3,3), x)
-    x = ConvBlock(1, 256, (3,3), x)
-    x = ConvBlock(1, 512, (3,3), x)
-    # x = ConvBlock(1, 1024, (3,3), x)
-    x = ConvBlock(1, 512, (3,3), x, is_last=True)
+    # base_model = VGG16(weights='imagenet', include_top=False, input_tensor=inputlayer)
+    # base_model = DenseNet121(include_top=False, weights="imagenet", input_tensor=inputlayer)
+    # x = GlobalAveragePooling2D()(base_model.output)
+    
+    
+    # x = ConvBlock(1, 64, (5,5), inputlayer)
+    # x = ConvBlock(1, 64, (3,3), x)
+    # x = ConvBlock(1, 128, (3,3), x)
+    # x = ConvBlock(1, 256, (3,3), x)
+    # x = ConvBlock(1, 512, (3,3), x)
+    # # x = ConvBlock(1, 1024, (3,3), x)
+    # x = ConvBlock(1, 512, (3,3), x, is_last=True)
 
+
+    x = ConvBlock(1, 64, (5,5), inputlayer)
+    # x = ConvBlock(1, 64, (3,3), x)
+    x = ConvBlock(1, 128, (3,3), x, is_last=True)
+    # x = ConvBlock(1, 256, (3,3), x)
+    # x = ConvBlock(1, 512, (3,3), x)
+    # x = ConvBlock(1, 1024, (3,3), x)
+    # x = ConvBlock(1, 512, (3,3), x, is_last=True)
 
     x = Dense(1000, kernel_regularizer=l2(0.001), activation="relu")(x) # 
     x = BatchNormalization(name="bn_fc_1")(x)
@@ -211,31 +221,22 @@ def build_cnn_layer_2(i, shape=(HEIGHT,WIDTH,3,)):
     model = Model(inputlayer, x)
     return model
 
-# def build_model():
-#     cnn_layers = []
-#     for i in range(0,INPUTS):
-#         layer = build_cnn_layer(i)
-#         cnn_layers.append(layer)
-
-#     output_layer = build_sequential_layer(cnn_layers)
-#     model = Model(inputs=[x.input for x in cnn_layers], outputs=output_layer)
-#     optimizer = optimizers.Adam()    
-#     model.compile(optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
-#     return model
-
 def build_model(height=HEIGHT, width=WIDTH):
-    # cnn_layers = []
-    # for i in range(0, INPUTS):
-    #     layer = build_cnn_layer(i)
-    #     cnn_layers.append(layer)
-    # model = build_cnn_layer(1, shape=(height, width, 3))
     model = build_cnn_layer_2(1, shape=(height, width, 3))
-    # output_layer = build_sequential_layer(cnn_layers)
-    # combined = BatchNormalization(name="batch_norm_1")(layer)
-    # combined = Activation("relu", name="act_layer")(combined)
-    # z = Dense(2000, activation="softmax")(combined)
-    # z = Dense(1108, activation="softmax")(combined)
-    # model = Model(inputs=[x.input for x in cnn_layers], outputs=output_layer)
     optimizer = optimizers.Adam()    
     model.compile(optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
     return model
+
+def build_multi_model(height=HEIGHT, width=WIDTH):
+    cnn_layers = []
+    for i in range(0, INPUTS):
+        layer = build_cnn_layer(i)
+        cnn_layers.append(layer)
+
+    output_layer = build_sequential_layer(cnn_layers)
+    model = Model(inputs=[x.input for x in cnn_layers], outputs=output_layer)
+    optimizer = optimizers.Adam()    
+    model.compile(optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
+    return model
+
+    

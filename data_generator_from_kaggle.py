@@ -1,6 +1,10 @@
-## https://www.kaggle.com/chandyalex/recursion-cellular-keras-densenet
-class My_Generator(Sequence):
+import numpy as np
+from keras.utils import Sequence, to_categorical
+import cv2
+from sklearn.utils import class_weight, shuffle
 
+## https://www.kaggle.com/chandyalex/recursion-cellular-keras-densenet
+class MultiGenerator(Sequence):
     def __init__(self, image_filenames, labels,
                  batch_size, is_train=True,
                  mix=False, augment=False):
@@ -43,30 +47,32 @@ class My_Generator(Sequence):
     def train_generate(self, batch_x, batch_y):
         batch_images = []
         for (sample, label) in zip(batch_x, batch_y):
-            img = cv2.imread('../input/recursion-complete/train/train/'+sample)
-#             try:
-#                 img.shape
-#                 print("checked for shape".format(img.shape))
-#             except AttributeError:
-#                 print("shape not found")
-#             img = cv2.resize(img, (SIZE, SIZE))
-            if(self.is_augment):
-                img = seq.augment_image(img)
-            batch_images.append(img)
-        batch_images = np.array(batch_images, np.float32)/255
-#         print(batch_images.shape)
+            imgs = []
+            for i in range(1, 7):
+                img = cv2.resize(cv2.imread(f"{sample}_w{i}.png"), (224,224))
+                
+                # if(self.is_augment):
+                #     img = seq.augment_image(img)
+                imgs.append(img)
+            
+            batch_images.append(imgs)
+        batch_images = np.transpose(np.array(batch_images, np.float32)/255, axes=(1,0,2,3,4))
         batch_y = np.array(batch_y, np.float32)
         if(self.is_mix):
             batch_images, batch_y = self.mix_up(batch_images, batch_y)
-        return batch_images, batch_y
+        return [x for x in batch_images], to_categorical(batch_y, 1108)
 
     def valid_generate(self, batch_x, batch_y):
         batch_images = []
+
         for (sample, label) in zip(batch_x, batch_y):
-            img = cv2.imread('../input/recursion-complete/train/train/'+sample)
-#             img = cv2.resize(img, (SIZE, SIZE))
-            batch_images.append(img)
-        batch_images = np.array(batch_images, np.float32)/255
+            imgs = []
+            for i in range(1, 7):
+                img = cv2.imread(f"{sample}_w{i}.png")
+
+                imgs.append(img)            
+            batch_images.append(imgs)
+        batch_images = np.transpose(np.array(batch_images, np.float32)/255, axes=(1,0,2,3,4))
         
         batch_y = np.array(batch_y, np.float32)
-        return batch_images, batch_y
+        return [x for x in batch_images], keras.utils.to_categorical(batch_y, 1108)
