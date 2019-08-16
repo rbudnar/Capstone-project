@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from keras.utils import Sequence, to_categorical
 import cv2
 from sklearn.utils import class_weight, shuffle
@@ -7,8 +8,14 @@ from sklearn.utils import class_weight, shuffle
 class MultiGenerator(Sequence):
     def __init__(self, image_filenames, labels,
                  batch_size, is_train=True,
-                 mix=False, augment=False):
-        self.image_filenames, self.labels = image_filenames, labels
+                 mix=False, augment=False, do_one_hot=False):
+        self.image_filenames = image_filenames
+
+        if do_one_hot: 
+            self.labels = pd.get_dummies(labels)
+        else:
+            self.labels = to_categorical(labels, 1108)
+
         self.batch_size = batch_size
         self.is_train = is_train
         self.is_augment = augment
@@ -46,7 +53,9 @@ class MultiGenerator(Sequence):
 
     def train_generate(self, batch_x, batch_y):
         batch_images = []
-        for (sample, label) in zip(batch_x, batch_y):
+        # print(batch_x, batch_y)
+        for (sample, label) in zip(batch_x, batch_y.transpose()):
+            # print(sample, label)
             imgs = []
             for i in range(1, 7):
                 img = cv2.resize(cv2.imread(f"{sample}_w{i}.png"), (224,224))
@@ -60,12 +69,14 @@ class MultiGenerator(Sequence):
         batch_y = np.array(batch_y, np.float32)
         if(self.is_mix):
             batch_images, batch_y = self.mix_up(batch_images, batch_y)
-        return [x for x in batch_images], to_categorical(batch_y, 1108)
+        # return [x for x in batch_images], to_categorical(batch_y, 1108)
+        # print("train", batch_y, batch_y.shape, batch_images.shape)
+        return [x for x in batch_images], batch_y
 
     def valid_generate(self, batch_x, batch_y):
         batch_images = []
 
-        for (sample, label) in zip(batch_x, batch_y):
+        for (sample, label) in zip(batch_x, batch_y.transpose()):
             imgs = []
             for i in range(1, 7):
                 img = cv2.imread(f"{sample}_w{i}.png")
@@ -75,4 +86,5 @@ class MultiGenerator(Sequence):
         batch_images = np.transpose(np.array(batch_images, np.float32)/255, axes=(1,0,2,3,4))
         
         batch_y = np.array(batch_y, np.float32)
-        return [x for x in batch_images], keras.utils.to_categorical(batch_y, 1108)
+        # print("valid", batch_y, batch_y.shape, batch_images.shape)
+        return [x for x in batch_images], batch_y

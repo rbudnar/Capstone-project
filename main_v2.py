@@ -5,13 +5,6 @@ import matplotlib.pyplot as plt
 from IPython.display import display # Allows the use of display() for DataFrames
 import seaborn as sb
 
-# from tensorflow import keras
-# from tensorflow.keras import optimizers
-# from tensorflow.keras.preprocessing.image import ImageDataGenerator
-# from tensorflow.keras.models import Sequential, Model
-# from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Activation, Dropout, Flatten, Dense, Add, Concatenate, BatchNormalization
-# from tensorflow.keras.callbacks import ModelCheckpoint
-
 import keras
 from keras import optimizers, models, layers
 from keras.preprocessing.image import ImageDataGenerator
@@ -263,12 +256,6 @@ def build_resnet_model(shape=(HEIGHT,WIDTH,3,)):
     model.add(Flatten())
     base_model.trainable = False
 
-    # for layer in base_model.layers:
-    #     if layer.name.find("block5") >= 0 or layer.name.find("block4") >= 0:
-    #         layer.trainable = True
-    #     else:
-    #         layer.trainable = False
-
     model.add(Dense(1000, activation="relu"))  
     model.add(BatchNormalization(name="bn_fc_1"))
     model.add(Dropout(0.3))
@@ -279,6 +266,16 @@ def build_resnet_model(shape=(HEIGHT,WIDTH,3,)):
     model.summary()
 
     return model
+
+def build_cnn_layer_3(i, shape=(HEIGHT,WIDTH,3,)):
+    inputlayer = Input(shape=shape)    
+    x = ConvBlock(1, 32, (5,5), inputlayer)
+    x = ConvBlock(1, 64, (3,3), x)
+    x = ConvBlock(1, 128, (3,3), x)
+    x = Flatten()(x)
+    model = Model(inputlayer, x)
+    return model
+
 
 def build_model(height=HEIGHT, width=WIDTH):
     model = build_cnn_layer_vgg(1, shape=(height, width, 3))
@@ -299,4 +296,59 @@ def build_multi_model(height=HEIGHT, width=WIDTH):
     model.compile(optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
     return model
 
-    
+def build_cell_classifier_model():
+    cnn_layers = []
+    for i in range(0, INPUTS):
+        layer = build_cnn_layer_3(i)
+        cnn_layers.append(layer)
+
+    combined = Concatenate()([x.output for x in cnn_layers])
+
+    combined = Dense(10, kernel_regularizer=l2(0.001), activation="relu")(combined)
+    combined = BatchNormalization(name="batch_norm_1")(combined)
+    combined = Dropout(0.3)(combined)    
+    output_layer = Dense(4, kernel_regularizer=l2(0.001), activation="softmax")(combined)
+
+    model = Model(inputs=[x.input for x in cnn_layers], outputs=output_layer)
+    optimizer = optimizers.Nadam()    
+    model.compile(optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
+    # model.summary()
+    return model
+
+
+def build_cell_multi_model(cell_model_path, height=HEIGHT, width=WIDTH):
+    base_model = models.load_model(cell_model_path)
+    base_model.trainable = False
+
+    # f1 = base_model.get_layer("flatten_1")
+    layers = [ConvBlock(1, 128, (3,3), base_model.get_layer(f"flatten_{i}")) for i in range(1,7)]
+    combined = Concatenate()([x.output for x in layers])
+
+    combined = Dense(2000, kernel_regularizer=l2(0.001), activation="relu")(combined)
+    combined = BatchNormalization(name="batch_norm_1")(combined)
+    combined = Dropout(0.3)(combined)    
+    output_layer = Dense(1108, kernel_regularizer=l2(0.001), activation="softmax")(combined)
+
+    model = Model(inputs=base_model.input, outputs=output_layer)
+
+    ### Pop off concatenate - dense_2 layers, leaving at flattened
+    # base_model.pop() # dense_2
+    # base_model.pop() # dropout_1
+    # base_model.pop() # batch_norm_1
+    # base_model.pop() # dense_1
+    # base_model.pop() # concatenate_1
+
+    optimizer = optimizers.Nadam() 
+    model.compile(optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
+    model.summary()
+
+    # cnn_layers = []
+    # for i in range(0, INPUTS):
+    #     layer = build_cnn_layer(i)
+    #     cnn_layers.append(layer)
+
+    # output_layer = build_sequential_layer(cnn_layers)
+    # model = Model(inputs=[x.input for x in cnn_layers], outputs=output_layer)
+    # optimizer = optimizers.Nadam()    
+    # model.compile(optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
+    # return model
