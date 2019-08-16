@@ -268,3 +268,6 @@ saved_models/*.*
 .ipynb_checkpoints/*.*
 wandb/**/*.*
 logs/**/*.*
+rxrx1-utils-master/**/*.*
+rxrx1-utils-master/license
+*.zip

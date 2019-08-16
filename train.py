@@ -18,7 +18,7 @@ import os
 from datetime import datetime
 import tensorflow as tf
 from main_v2 import (generate_dataframe_from_csv_horizontal, generate_dataframe_from_csv_vertical, 
-		get_model_inputs, create_multi_generator, build_model, build_multi_model)
+		get_model_inputs, create_multi_generator, build_model, build_multi_model, build_vgg_model, build_resnet_model)
 from math import ceil
 from data_generator_from_kaggle import MultiGenerator
 import wandb
@@ -98,9 +98,13 @@ class TrainingRunner:
 					class_mode='categorical')
 			self.steps = ceil(self.train_generator.n/self.train_generator.batch_size)
 			self.steps_valid = ceil(self.valid_generator.n/self.valid_generator.batch_size)
-			self.model = build_model(height=HEIGHT, width=WIDTH)
+			# self.model = build_model(height=HEIGHT, width=WIDTH)
+			self.model = build_resnet_model()
 
-		self.model.summary()
+		# self.model.summary()
+	def summary(self):
+		if(self.model):
+			self.model.summary()
 
 	# def setup_callbacks(self): 
 	# 	logdir = os.path.join("logs", datetime.now().strftime("%Y%m%d-%H%M%S"))

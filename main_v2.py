@@ -13,21 +13,25 @@ import seaborn as sb
 # from tensorflow.keras.callbacks import ModelCheckpoint
 
 import keras
-from keras import optimizers
+from keras import optimizers, models, layers
 from keras.preprocessing.image import ImageDataGenerator
 from keras.models import Sequential, Model
 from keras.layers import Input, Conv2D, MaxPooling2D, Activation, Dropout, Flatten, Dense, Add, Concatenate, BatchNormalization, GlobalAveragePooling2D
+
 from keras.callbacks import ModelCheckpoint
 from keras.regularizers import l2
 import timeit
 import os
 import tensorflow as tf
 
+from keras.applications.resnet50 import ResNet50
+### these are not found 
+# from keras.applications.resnet import ResNet152
+# from keras.applications.resnet_v2 import ResNet152V2
 # from keras.applications.DenseNet121 import DenseNet121
-from keras.applications.densenet import DenseNet121
 from keras.applications.vgg16 import VGG16
-from keras.preprocessing import image
 from keras.applications.vgg16 import preprocess_input
+from keras.preprocessing import image
 
 HEIGHT = 224
 WIDTH = 224
@@ -103,11 +107,11 @@ def build_cnn_layer(i, shape=(HEIGHT,WIDTH,3,)):
     # x = Conv2D(filters=32, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(x)
     # x = BatchNormalization(name=f"bn_cnn_2_{i}")(x)
     # x = MaxPooling2D(pool_size=2)(x)
-    x = Conv2D(filters=32, kernel_size=5, padding='same', kernel_initializer="he_uniform", activation='relu')(inputlayer)
-    x = BatchNormalization(name=f"bn_cnn_1_{i}")(x)
-    x = MaxPooling2D(pool_size=2)(x)
+    # x = Conv2D(filters=32, kernel_size=5, padding='same', kernel_initializer="he_uniform", activation='relu')(inputlayer)
+    # x = BatchNormalization(name=f"bn_cnn_1_{i}")(x)
+    # x = MaxPooling2D(pool_size=2)(x)
 
-    x = Conv2D(filters=64, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(x)
+    x = Conv2D(filters=64, kernel_size=5, padding='same', kernel_initializer="he_uniform", activation='relu')(inputlayer)
     x = BatchNormalization(name=f"bn_cnn_2_{i}")(x)
     x = MaxPooling2D(pool_size=2)(x)
     
@@ -158,10 +162,11 @@ def build_cnn_layer(i, shape=(HEIGHT,WIDTH,3,)):
 
 def build_sequential_layer(previous_layers):
     combined = Concatenate()([x.output for x in previous_layers])
+    combined = Dense(1000, kernel_regularizer=l2(0.001), activation="relu")(combined)
     combined = BatchNormalization(name="batch_norm_1")(combined)
-    combined = Activation("relu", name="act_layer")(combined)
-    # z = Dense(2000, activation="relu")(combined)
-    z = Dense(1108, activation="softmax")(combined)
+    combined = Dropout(0.3)(combined)    
+    # combined = Activation("relu", name="act_layer")(combined)
+    z = Dense(1108, kernel_regularizer=l2(0.001), activation="softmax")(combined)
     return z
 
 
@@ -178,37 +183,41 @@ def ConvBlock(n_conv, n_out, shape, x, is_last=False):
     return out
 
 ## VGG16 
-# def build_cnn_layer_2(i, shape=(HEIGHT,WIDTH,3,)):
-#     inputlayer = Input(shape=shape)
-#     x = ConvBlock(2, 64, (3,3), inputlayer)
-#     x = ConvBlock(2, 128, (3,3), x)
-#     x = ConvBlock(3, 256, (3,3), x)
-#     x = ConvBlock(3, 512, (3,3), x)
-#     x = ConvBlock(3, 512, (3,3), x, is_last=True)
+def build_cnn_layer_vgg(i, shape=(HEIGHT,WIDTH,3,)):
+    inputlayer = Input(shape=shape)
+    x = ConvBlock(2, 64, (3,3), inputlayer)
+    x = ConvBlock(2, 128, (3,3), x)
+    x = ConvBlock(3, 256, (3,3), x)
+    x = ConvBlock(3, 512, (3,3), x)
+    x = ConvBlock(3, 512, (3,3), x, is_last=True)
 
-#     x = Dense(1108, activation='softmax')(x)
-#     model = Model(inputlayer, x)
-#     return model
+    x = Dense(1000, kernel_regularizer=l2(0.001), activation="relu")(x) 
+    x = BatchNormalization(name="bn_fc_1")(x)
+    x = Dropout(0.3)(x)
+    x = Dense(1108, kernel_regularizer=l2(0.001), activation='softmax')(x)
+    model = Model(inputlayer, x)
+    return model
 
 def build_cnn_layer_2(i, shape=(HEIGHT,WIDTH,3,)):
     inputlayer = Input(shape=shape)
     # base_model = VGG16(weights='imagenet', include_top=False, input_tensor=inputlayer)
-    # base_model = DenseNet121(include_top=False, weights="imagenet", input_tensor=inputlayer)
+    # base_model.trainable = False
+    # # base_model = DenseNet121(include_top=False, weights="imagenet", input_tensor=inputlayer)
     # x = GlobalAveragePooling2D()(base_model.output)
     
     
-    # x = ConvBlock(1, 64, (5,5), inputlayer)
+    x = ConvBlock(1, 64, (5,5), inputlayer)
     # x = ConvBlock(1, 64, (3,3), x)
-    # x = ConvBlock(1, 128, (3,3), x)
+    x = ConvBlock(1, 128, (3,3), x)
     # x = ConvBlock(1, 256, (3,3), x)
-    # x = ConvBlock(1, 512, (3,3), x)
+    x = ConvBlock(1, 512, (3,3), x)
     # # x = ConvBlock(1, 1024, (3,3), x)
     # x = ConvBlock(1, 512, (3,3), x, is_last=True)
 
 
-    x = ConvBlock(1, 64, (5,5), inputlayer)
+    # x = ConvBlock(1, 64, (5,5), inputlayer)
     # x = ConvBlock(1, 64, (3,3), x)
-    x = ConvBlock(1, 128, (3,3), x, is_last=True)
+    # x = ConvBlock(1, 128, (3,3), x, is_last=True)
     # x = ConvBlock(1, 256, (3,3), x)
     # x = ConvBlock(1, 512, (3,3), x)
     # x = ConvBlock(1, 1024, (3,3), x)
@@ -221,13 +230,64 @@ def build_cnn_layer_2(i, shape=(HEIGHT,WIDTH,3,)):
     model = Model(inputlayer, x)
     return model
 
+def build_vgg_model(shape=(HEIGHT,WIDTH,3,)):    
+    ## https://github.com/fchollet/deep-learning-with-python-notebooks/blob/master/5.3-using-a-pretrained-convnet.ipynb
+    base_model = VGG16(weights='imagenet', include_top=False, input_shape=shape)
+    model = Sequential()
+    model.add(base_model)
+    model.add(Flatten())
+    base_model.trainable = False
+
+    for layer in base_model.layers:
+        if layer.name.find("block5") >= 0 or layer.name.find("block4") >= 0:
+            layer.trainable = True
+        else:
+            layer.trainable = False
+
+    model.add(Dense(1000, activation="relu"))  
+    model.add(BatchNormalization(name="bn_fc_1"))
+    model.add(Dropout(0.3))
+    model.add(Dense(1108, activation='softmax')) # kernel_regularizer=l2(0.001), 
+
+    optimizer = optimizers.Adam()    
+    model.compile(optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
+    model.summary()
+
+    return model
+
+def build_resnet_model(shape=(HEIGHT,WIDTH,3,)):    
+    ## https://github.com/fchollet/deep-learning-with-python-notebooks/blob/master/5.3-using-a-pretrained-convnet.ipynb
+    base_model = ResNet50(weights='imagenet', include_top=False, input_shape=shape)
+    model = Sequential()
+    model.add(base_model)
+    model.add(Flatten())
+    base_model.trainable = False
+
+    # for layer in base_model.layers:
+    #     if layer.name.find("block5") >= 0 or layer.name.find("block4") >= 0:
+    #         layer.trainable = True
+    #     else:
+    #         layer.trainable = False
+
+    model.add(Dense(1000, activation="relu"))  
+    model.add(BatchNormalization(name="bn_fc_1"))
+    model.add(Dropout(0.3))
+    model.add(Dense(1108, activation='softmax')) # kernel_regularizer=l2(0.001), 
+
+    optimizer = optimizers.Adam()    
+    model.compile(optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
+    model.summary()
+
+    return model
+
 def build_model(height=HEIGHT, width=WIDTH):
-    model = build_cnn_layer_2(1, shape=(height, width, 3))
+    model = build_cnn_layer_vgg(1, shape=(height, width, 3))
     optimizer = optimizers.Adam()    
     model.compile(optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
     return model
 
 def build_multi_model(height=HEIGHT, width=WIDTH):
+    print("building multi model")
     cnn_layers = []
     for i in range(0, INPUTS):
         layer = build_cnn_layer(i)
@@ -235,7 +295,7 @@ def build_multi_model(height=HEIGHT, width=WIDTH):
 
     output_layer = build_sequential_layer(cnn_layers)
     model = Model(inputs=[x.input for x in cnn_layers], outputs=output_layer)
-    optimizer = optimizers.Adam()    
+    optimizer = optimizers.Nadam()    
     model.compile(optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
     return model
 
