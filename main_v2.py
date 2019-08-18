@@ -52,7 +52,7 @@ def generate_dataframe_from_csv_horizontal(path, inputs=INPUTS, root_name_only=F
     data = pd.read_csv(path)
     columns = (data.apply(lambda r: pd.Series(gen_image_paths_horizontal(r)), axis=1)
         .stack()
-        .rename("img_path")
+        .rename("img_path_root")
         .reset_index(level=1, drop=True))
     data["sirna"] = data["sirna"].apply(lambda s: str(s))
     data = data.join(columns).reset_index(drop=True)
@@ -162,31 +162,44 @@ def build_sequential_layer(previous_layers):
     z = Dense(1108, kernel_regularizer=l2(0.001), activation="softmax")(combined)
     return z
 
+def build_sequential_layer_controls(previous_layers):
+    combined = Concatenate()([x.output for x in previous_layers])
+    combined = Dense(60, kernel_regularizer=l2(0.001), activation="relu")(combined)
+    combined = BatchNormalization(name="batch_norm_1")(combined)
+    combined = Dropout(0.3)(combined)    
+    z = Dense(31, kernel_regularizer=l2(0.001), activation="softmax")(combined)
+    return z
 
 ## https://towardsdatascience.com/why-default-cnn-are-broken-in-keras-and-how-to-fix-them-ce295e5e5f2
 
-def ConvBlock(n_conv, n_out, shape, x, is_last=False):
+def ConvBlock(n_conv, n_out, shape, x, is_last=False, name=None):
     for i in range(n_conv):
-        x = Conv2D(n_out, shape, padding='same', kernel_initializer="he_uniform", activation='relu')(x) #
-        x = BatchNormalization()(x)
+        if name is not None:
+            x = Conv2D(n_out, shape, padding='same', name=name, kernel_initializer="he_uniform", activation='relu')(x)
+            x = BatchNormalization(name=f"bn_{name}")(x)
+        else: 
+            x = Conv2D(n_out, shape, padding='same', kernel_initializer="he_uniform", activation='relu')(x)
+            x = BatchNormalization()(x)
+        
     
     if is_last: out = GlobalAveragePooling2D()(x)  
     else: out = MaxPooling2D()(x)
-        
+    
     return out
 
 ## VGG16 
 def build_cnn_layer_vgg(i, shape=(HEIGHT,WIDTH,3,)):
     inputlayer = Input(shape=shape)
-    x = ConvBlock(2, 64, (3,3), inputlayer)
+    x = ConvBlock(2, 64, (5,5), inputlayer)
     x = ConvBlock(2, 128, (3,3), x)
     x = ConvBlock(3, 256, (3,3), x)
-    x = ConvBlock(3, 512, (3,3), x)
+    # x = ConvBlock(3, 512, (3,3), x)
     x = ConvBlock(3, 512, (3,3), x, is_last=True)
+    # x = Flatten()(x)
 
     x = Dense(1000, kernel_regularizer=l2(0.001), activation="relu")(x) 
-    x = BatchNormalization(name="bn_fc_1")(x)
-    x = Dropout(0.3)(x)
+    # x = BatchNormalization(name="bn_fc_1")(x)
+    # x = Dropout(0.3)(x)
     x = Dense(1108, kernel_regularizer=l2(0.001), activation='softmax')(x)
     model = Model(inputlayer, x)
     return model
@@ -283,14 +296,16 @@ def build_model(height=HEIGHT, width=WIDTH):
     model.compile(optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
     return model
 
-def build_multi_model(height=HEIGHT, width=WIDTH):
+def build_multi_model(height=HEIGHT, width=WIDTH, controls_only=False):
     print("building multi model")
     cnn_layers = []
     for i in range(0, INPUTS):
-        layer = build_cnn_layer(i)
+        layer = build_cnn_layer_3(i)
         cnn_layers.append(layer)
 
-    output_layer = build_sequential_layer(cnn_layers)
+    if controls_only: output_layer = build_sequential_layer_controls(cnn_layers)
+    else: output_layer = build_sequential_layer(cnn_layers)
+
     model = Model(inputs=[x.input for x in cnn_layers], outputs=output_layer)
     optimizer = optimizers.Nadam()    
     model.compile(optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
@@ -320,35 +335,41 @@ def build_cell_multi_model(cell_model_path, height=HEIGHT, width=WIDTH):
     base_model = models.load_model(cell_model_path)
     base_model.trainable = False
 
-    # f1 = base_model.get_layer("flatten_1")
-    layers = [ConvBlock(1, 128, (3,3), base_model.get_layer(f"flatten_{i}")) for i in range(1,7)]
-    combined = Concatenate()([x.output for x in layers])
+    ### Pop off concatenate - dense_2 layers, leaving at flattened
+    base_model.layers.pop() # dense_2
+    base_model.layers.pop() # dropout_1
+    base_model.layers.pop() # batch_norm_1
+    base_model.layers.pop() # dense_1
+    base_model.layers.pop() # concatenate_1
 
-    combined = Dense(2000, kernel_regularizer=l2(0.001), activation="relu")(combined)
+    ## pop off 6 flatten layers
+    base_model.layers.pop()
+    base_model.layers.pop()
+    base_model.layers.pop()
+    base_model.layers.pop()
+    base_model.layers.pop()
+    base_model.layers.pop()
+
+    layers = [build_connected_layers(base_model.get_layer(f"max_pooling2d_{i*3}").output, name=f"cv_block_sirna_{i}") for i in range(1,7)]
+    
+    combined = Concatenate()([x for x in layers])
+
+    combined = Dense(1000, kernel_regularizer=l2(0.001), activation="relu")(combined)
     combined = BatchNormalization(name="batch_norm_1")(combined)
     combined = Dropout(0.3)(combined)    
     output_layer = Dense(1108, kernel_regularizer=l2(0.001), activation="softmax")(combined)
 
     model = Model(inputs=base_model.input, outputs=output_layer)
-
-    ### Pop off concatenate - dense_2 layers, leaving at flattened
-    # base_model.pop() # dense_2
-    # base_model.pop() # dropout_1
-    # base_model.pop() # batch_norm_1
-    # base_model.pop() # dense_1
-    # base_model.pop() # concatenate_1
-
     optimizer = optimizers.Nadam() 
     model.compile(optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
-    model.summary()
+    # model.summary()
+    return model
 
-    # cnn_layers = []
-    # for i in range(0, INPUTS):
-    #     layer = build_cnn_layer(i)
-    #     cnn_layers.append(layer)
 
-    # output_layer = build_sequential_layer(cnn_layers)
-    # model = Model(inputs=[x.input for x in cnn_layers], outputs=output_layer)
-    # optimizer = optimizers.Nadam()    
-    # model.compile(optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
-    # return model
+def build_connected_layers(prev_output, name):
+    x = ConvBlock(1, 32, (5,5), prev_output, name =f"{name}_1")
+    x = ConvBlock(1, 64, (3,3), x, name =f"{name}_2")
+    x = ConvBlock(1, 128, (3,3), x, name =f"{name}_3")
+    x = Flatten()(x)
+
+    return x
