@@ -164,10 +164,16 @@ def build_sequential_layer(previous_layers):
 
 def build_sequential_layer_controls(previous_layers):
     combined = Concatenate()([x.output for x in previous_layers])
+    # combined = Dense(240, kernel_regularizer=l2(0.001), activation="relu")(combined)
+    # combined = BatchNormalization()(combined)
+    # combined = Dropout(0.3)(combined)
+    # combined = Dense(120, kernel_regularizer=l2(0.001), activation="relu")(combined)
+    # combined = BatchNormalization()(combined)
+    # combined = Dropout(0.3)(combined)
     combined = Dense(60, kernel_regularizer=l2(0.001), activation="relu")(combined)
-    combined = BatchNormalization(name="batch_norm_1")(combined)
+    combined = BatchNormalization()(combined)
     combined = Dropout(0.3)(combined)    
-    z = Dense(31, kernel_regularizer=l2(0.001), activation="softmax")(combined)
+    z = Dense(31, activation="softmax")(combined)
     return z
 
 ## https://towardsdatascience.com/why-default-cnn-are-broken-in-keras-and-how-to-fix-them-ce295e5e5f2
@@ -285,6 +291,8 @@ def build_cnn_layer_3(i, shape=(HEIGHT,WIDTH,3,)):
     x = ConvBlock(1, 32, (5,5), inputlayer)
     x = ConvBlock(1, 64, (3,3), x)
     x = ConvBlock(1, 128, (3,3), x)
+    x = ConvBlock(1, 256, (3,3), x)
+    x = ConvBlock(1, 512, (3,3), x)
     x = Flatten()(x)
     model = Model(inputlayer, x)
     return model
@@ -297,7 +305,6 @@ def build_model(height=HEIGHT, width=WIDTH):
     return model
 
 def build_multi_model(height=HEIGHT, width=WIDTH, controls_only=False):
-    print("building multi model")
     cnn_layers = []
     for i in range(0, INPUTS):
         layer = build_cnn_layer_3(i)
@@ -307,7 +314,8 @@ def build_multi_model(height=HEIGHT, width=WIDTH, controls_only=False):
     else: output_layer = build_sequential_layer(cnn_layers)
 
     model = Model(inputs=[x.input for x in cnn_layers], outputs=output_layer)
-    optimizer = optimizers.Nadam()    
+    optimizer = optimizers.Nadam()
+
     model.compile(optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
     return model
 

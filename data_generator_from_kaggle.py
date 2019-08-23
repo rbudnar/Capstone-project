@@ -3,6 +3,9 @@ import pandas as pd
 from keras.utils import Sequence, to_categorical
 import cv2
 from sklearn.utils import class_weight, shuffle
+import imgaug.augmenters as iaa
+
+
 
 ## https://www.kaggle.com/chandyalex/recursion-cellular-keras-densenet
 class MultiGenerator(Sequence):
@@ -56,14 +59,33 @@ class MultiGenerator(Sequence):
         batch_images = []
         for (sample, label) in zip(batch_x, batch_y.transpose()):
             imgs = []
+
+            seq = None
+            if(self.is_augment):
+                sometimes = lambda aug: iaa.Sometimes(0.5, aug)
+                seq = iaa.Sequential([
+                    sometimes(
+                        iaa.OneOf([
+                            iaa.Add((-10, 10), per_channel=0.5),
+                            iaa.Multiply((0.9, 1.1), per_channel=0.5),
+                            iaa.ContrastNormalization((0.9, 1.1), per_channel=0.5)
+                        ])
+                    ),
+                    iaa.Fliplr(0.5),
+                    iaa.Crop(percent=(0, 0.1)),
+                    iaa.Flipud(0.5)
+                ],random_order=True).to_deterministic()
+                
             for i in range(1, 7):
                 img = cv2.resize(cv2.imread(f"{sample}_w{i}.png"), (224,224))
                 
-                # if(self.is_augment):
-                #     img = seq.augment_image(img)
+                if seq is not None:
+                    img = seq.augment_image(img)
+                    
                 imgs.append(img)
             
             batch_images.append(imgs)
+
         batch_images = np.transpose(np.array(batch_images, np.float32)/255, axes=(1,0,2,3,4))
         batch_y = np.array(batch_y, np.float32)
         if(self.is_mix):
