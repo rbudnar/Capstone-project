@@ -41,39 +41,65 @@ from lr_logger import LRTensorBoard
 
 VAL_SPLIT = 0.2
 EPOCHS = 300
-HEIGHT = 224
-WIDTH = 224
+HEIGHT = 350
+WIDTH = 350
 BATCH_SIZE = 32
 
 CELL_MODEL_PATH = "saved_models\cell_model.h5"
 #### saved_models/weights.20190821-201844.hdf5
 
-
 class TrainingRunner:
-	def __init__(self, train_mode, filename="train_1.csv", controls_only=False, cell_model_path=CELL_MODEL_PATH, epochs=EPOCHS, batch_size=BATCH_SIZE, val_split=VAL_SPLIT, use_wandb=False, use_tb=True, weights_path=None):
+	def __init__(self, train_mode, 
+				filename="train_1.csv", 
+				controls_only=False, 
+				cell_model_path=CELL_MODEL_PATH, 
+				epochs=EPOCHS, 
+				batch_size=BATCH_SIZE, 
+				val_split=VAL_SPLIT, 
+				use_wandb=False, 
+				use_tb=True, 
+				model_path=None,
+				use_mlp=False):
+
 		self.use_wandb = use_wandb
 		self.use_tb = use_tb
-		self.valid_split = val_split
-		self.controls_only = controls_only
-		self.train_mode = train_mode
-		self.time_stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-		self.initial_epoch = 0
-
 		if self.use_wandb:
 			print("INITIALIZING WANDB")
-			wandb.init()
-			
-		self.batch_size = batch_size
-		self.epochs = epochs
+			if model_path is not None:
+				wandb.init(resume=True)
+			else: wandb.init()
+
+			self.valid_split = wandb.config.val_split
+			self.controls_only = wandb.config.controls_only
+			self.train_mode = wandb.config.train_mode
+			self.batch_size = wandb.config.batch_size
+			self.epochs = wandb.config.epochs
+		else:
+			self.valid_split = val_split
+			self.controls_only = controls_only
+			self.train_mode = train_mode
+			self.batch_size = batch_size
+			self.epochs = epochs
+
+		print(
+			self.valid_split,
+			self.controls_only,
+			self.train_mode,
+			self.batch_size,
+			self.epochs,
+		)
+
+		self.time_stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+		self.initial_epoch = 0			
 
 		df = pd.read_csv(filename,  dtype={'sirna': object})
 
 		if train_mode is TrainingMode.MULTI:
-			self.create_multi_model(df, weights_path)
+			self.create_multi_model(df, model_path, use_mlp=use_mlp)
 		elif train_mode is TrainingMode.CELL_ONLY:
 			self.create_cell_model(df)
 		elif train_mode is TrainingMode.CELL_MULTI:
-			self.create_multi_model(df, weights_path, use_cell_model=True, cell_model_path=cell_model_path,)
+			self.create_multi_model(df, model_path, use_mlp=use_mlp, use_cell_model=True, cell_model_path=cell_model_path)
 		else:
 			self.create_simple_model(df)
 
@@ -81,10 +107,10 @@ class TrainingRunner:
 		if(self.model):
 			self.model.summary()
 
-	def create_multi_model(self, df, weights_path=None, use_cell_model=False, cell_model_path=CELL_MODEL_PATH):
+	def create_multi_model(self, df, model_path=None, use_cell_model=False, cell_model_path=CELL_MODEL_PATH, use_mlp=False):
 		''' Creates a model that trains on each of set of 6 images. Can use the cell classifier model for transfer learning.
 		'''
-		x = df["img_path_root"]
+		x = df[["img_path_root", "cell_type"]]
 		y = df["sirna"]
 		self.train_x, self.valid_x, self.train_y, self.valid_y = train_test_split(x, y, test_size=0.2, stratify=y, random_state=10)
 
@@ -92,17 +118,20 @@ class TrainingRunner:
 		else: class_count = 1108
 
 		self.train_generator = MultiGenerator(self.train_x, self.train_y, self.batch_size, class_count=class_count, augment=True, is_train=True)
-		self.valid_generator = MultiGenerator(self.valid_x, self.valid_y, self.batch_size, class_count=class_count,)
+		self.valid_generator = MultiGenerator(self.valid_x, self.valid_y, self.batch_size, class_count=class_count)
 		self.steps = self.train_generator.__len__()
 		self.steps_valid = self.valid_generator.__len__()
 		if use_cell_model:
 			print("creating new cell model")
 			self.model = build_cell_multi_model(cell_model_path, height=HEIGHT, width=WIDTH)
 		else:
-			if weights_path is not None:
-				print(f"loading model from {weights_path}")
-				self.model = keras.models.load_model(weights_path)
-				self.initial_epoch = int(weights_path[weights_path.find("=")+1:weights_path.rfind("=")])
+			if model_path is not None:
+				print(f"loading model from {model_path}")
+				self.model = keras.models.load_model(model_path)
+				if use_wandb:
+					self.initial_epoch = wandb.run.step
+				else:
+					self.initial_epoch = int(model_path[model_path.find("=")+1:model_path.rfind("=")])
 				print(self.initial_epoch)
 			else:
 				print("creating new multi model")
@@ -120,7 +149,7 @@ class TrainingRunner:
 		self.train_generator = train_datagen.flow_from_dataframe(
 					df,
 					directory="./",
-					x_col="img_path",
+					x_col="img_rgb",
 					y_col="sirna",
 					target_size=(HEIGHT, WIDTH),
 					batch_size=self.batch_size,
@@ -130,7 +159,7 @@ class TrainingRunner:
 		self.valid_generator = train_datagen.flow_from_dataframe(
 				df,
 				directory="./",
-				x_col="img_path",
+				x_col="img_rgb",
 				y_col="sirna",
 				target_size=(HEIGHT, WIDTH),
 				batch_size=self.batch_size,
@@ -140,7 +169,6 @@ class TrainingRunner:
 		self.steps = ceil(self.train_generator.n/self.train_generator.batch_size)
 		self.steps_valid = ceil(self.valid_generator.n/self.valid_generator.batch_size)
 		self.model = build_model(height=HEIGHT, width=WIDTH)
-		# self.model = build_resnet_model()
 
 	def create_cell_model(self, df):
     	# ''' Creates a model that only learns our 4 cell types. Does not classify treatments (siRNAs)
@@ -165,28 +193,25 @@ class TrainingRunner:
 
 		callbacks = []
 
-		# callbacks.append(ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, verbose=1, mode='auto', min_delta=0.0001))
+		# # callbacks.append(ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, verbose=1, mode='auto', min_delta=0.0001))
 
 		total_steps = int(self.epochs * self.train_generator.__len__())
 		warmup_epoch = 10
 		warmup_steps = int(warmup_epoch * self.train_generator.__len__())
 		warmup_batches = warmup_epoch * self.train_generator.__len__()
-
-		callbacks.append(WarmUpCosineDecayScheduler(learning_rate_base=0.001,
+		learning_rate = .1 * self.batch_size / 256
+		callbacks.append(WarmUpCosineDecayScheduler(learning_rate_base=learning_rate,
                                         total_steps=total_steps,
 										global_step_init=self.initial_epoch * self.steps,
                                         warmup_learning_rate=0.0,
                                         warmup_steps=warmup_steps,
                                         hold_base_rate_steps=0, verbose=0))
 
-		# callbacks.append(EarlyStopping(monitor="val_loss", 
-        #               mode="min", 
-        #               patience=20))
+		# # callbacks.append(EarlyStopping(monitor="val_loss", 
+        # #               mode="min", 
+        # #               patience=20))
 
-		callbacks.append(CSVLogger(filename='./training_log.csv',
-                       separator=',',
-                       append=True))
-		callbacks.append(LRTensorBoard(logdir))
+		# callbacks.append(LRTensorBoard(logdir))
 		
 		if self.train_mode is TrainingMode.CELL_ONLY:
 			checkpoint_path = f"saved_models/cell_model.weights.{self.time_stamp}"
@@ -196,19 +221,21 @@ class TrainingRunner:
 		print("checkpoint path: ", checkpoint_path)
 		callbacks.append(ModelCheckpoint(filepath=checkpoint_path+"={epoch:02d}={val_loss:.2f}.hdf5", verbose=1, monitor='val_loss', save_best_only=True))
 		
-		# callbacks = [checkpointer, reduceLROnPlat, early, csv_logger, tensorboard_callback]
+		# # callbacks = [checkpointer, reduceLROnPlat, early, csv_logger, tensorboard_callback]
 		if self.use_wandb:
 			callbacks.append(WandbCallback())
 		if self.use_tb:
 			callbacks.append(keras.callbacks.TensorBoard(log_dir=logdir))	#, write_grads=True, histogram_freq=1		
 
-		## workaround for `FailedPreconditionError: Attempting to use uninitialized value Adam/lr`
-		# keras.backend.get_session().run(tf.global_variables_initializer())
+		# ## workaround for `FailedPreconditionError: Attempting to use uninitialized value Adam/lr`
+		# # keras.backend.get_session().run(tf.global_variables_initializer())
 
 		self.model.fit_generator(self.train_generator, 
 							steps_per_epoch= self.steps,
 							validation_data=self.valid_generator,
 							validation_steps= self.steps_valid, 
 							initial_epoch=self.initial_epoch,
-							epochs=self.epochs, callbacks=callbacks, verbose=1)
+							epochs=self.epochs, 
+							callbacks=callbacks, 
+							verbose=1)
 

@@ -26,8 +26,8 @@ from keras.applications.vgg16 import VGG16
 from keras.applications.vgg16 import preprocess_input
 from keras.preprocessing import image
 
-HEIGHT = 224
-WIDTH = 224
+HEIGHT = 350
+WIDTH = 350
 INPUTS = 6
 ## loading from dataframe https://medium.com/@vijayabhaskar96/tutorial-on-keras-flow-from-dataframe-1fd4493d237c
 
@@ -162,7 +162,11 @@ def build_sequential_layer(previous_layers):
     z = Dense(1108, kernel_regularizer=l2(0.001), activation="softmax")(combined)
     return z
 
-def build_sequential_layer_controls(previous_layers):
+def build_sequential_layer_controls(previous_layers, use_mlp=False):
+    if use_mlp:
+        mlp = create_mlp()
+        previous_layers.append(mlp)
+
     combined = Concatenate()([x.output for x in previous_layers])
     # combined = Dense(240, kernel_regularizer=l2(0.001), activation="relu")(combined)
     # combined = BatchNormalization()(combined)
@@ -196,15 +200,14 @@ def ConvBlock(n_conv, n_out, shape, x, is_last=False, name=None):
 ## VGG16 
 def build_cnn_layer_vgg(i, shape=(HEIGHT,WIDTH,3,)):
     inputlayer = Input(shape=shape)
-    x = ConvBlock(2, 64, (5,5), inputlayer)
-    x = ConvBlock(2, 128, (3,3), x)
-    x = ConvBlock(3, 256, (3,3), x)
-    # x = ConvBlock(3, 512, (3,3), x)
-    x = ConvBlock(3, 512, (3,3), x, is_last=True)
-    # x = Flatten()(x)
+    x = ConvBlock(1, 32, (5,5), inputlayer)
+    x = ConvBlock(1, 64, (3,3), x)
+    x = ConvBlock(1, 128, (3,3), x)
+    x = ConvBlock(1, 256, (3,3), x)
+    x = ConvBlock(1, 512, (3,3), x, is_last=True)
 
     x = Dense(1000, kernel_regularizer=l2(0.001), activation="relu")(x) 
-    # x = BatchNormalization(name="bn_fc_1")(x)
+    x = BatchNormalization(name="bn_fc_1")(x)
     # x = Dropout(0.3)(x)
     x = Dense(1108, kernel_regularizer=l2(0.001), activation='softmax')(x)
     model = Model(inputlayer, x)
@@ -293,6 +296,7 @@ def build_cnn_layer_3(i, shape=(HEIGHT,WIDTH,3,)):
     x = ConvBlock(1, 128, (3,3), x)
     x = ConvBlock(1, 256, (3,3), x)
     x = ConvBlock(1, 512, (3,3), x)
+    # x = ConvBlock(1, 1024, (3,3), x)
     x = Flatten()(x)
     model = Model(inputlayer, x)
     return model
@@ -304,17 +308,17 @@ def build_model(height=HEIGHT, width=WIDTH):
     model.compile(optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
     return model
 
-def build_multi_model(height=HEIGHT, width=WIDTH, controls_only=False):
+def build_multi_model(height=HEIGHT, width=WIDTH, controls_only=False, use_mlp=False):
     cnn_layers = []
     for i in range(0, INPUTS):
-        layer = build_cnn_layer_3(i)
+        layer = build_cnn_layer_3(i, shape=(height, width, 3))
         cnn_layers.append(layer)
 
-    if controls_only: output_layer = build_sequential_layer_controls(cnn_layers)
+    if controls_only: output_layer = build_sequential_layer_controls(cnn_layers, use_mlp=use_mlp)
     else: output_layer = build_sequential_layer(cnn_layers)
 
     model = Model(inputs=[x.input for x in cnn_layers], outputs=output_layer)
-    optimizer = optimizers.Nadam()
+    optimizer = optimizers.Adam()
 
     model.compile(optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
     return model
@@ -381,3 +385,14 @@ def build_connected_layers(prev_output, name):
     x = Flatten()(x)
 
     return x
+
+def create_mlp():
+    # define our MLP network
+    model = Sequential()
+    model.add(Dense(8, input_dim=(4), kernel_regularizer=l2(0.001), activation="relu"))
+    model.add(BatchNormalization())
+    model.add(Dropout(0.4))
+    model.add(Dense(4, kernel_regularizer=l2(0.001), activation="relu"))
+
+    # return our model
+    return model

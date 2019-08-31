@@ -1,0 +1,19 @@
+epochs:
+  value: 300
+batch_size:
+  value: 32
+val_split:
+  value: .2
+height:
+  value: 350
+width:
+  value: 350
+filename:
+  value: "train_1.csv"
+model_path:
+  value: None
+controls_only:
+  value: False
+train_mode:
+  desc: Whether to train single image (1), 6 image (2).
+  value: 1
