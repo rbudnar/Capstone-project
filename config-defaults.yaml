@@ -5,15 +5,17 @@ batch_size:
 val_split:
   value: .2
 height:
-  value: 350
+  value: 224
 width:
-  value: 350
+  value: 224
 filename:
-  value: "train_1.csv"
+  value: train_root.csv
 model_path:
-  value: None
+  value:
 controls_only:
   value: False
 train_mode:
   desc: Whether to train single image (1), 6 image (2).
-  value: 1
+  value: 2
+cell_type:
+  value: HUVEC
