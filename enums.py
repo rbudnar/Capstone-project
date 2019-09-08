@@ -6,6 +6,7 @@ class TrainingMode(enum.Enum):
     MULTI = 2
     CELL_ONLY = 3
     CELL_MULTI = 4
+    TEST_ONLY = 5
 
 
 class CellType(enum.Enum):
@@ -13,3 +14,4 @@ class CellType(enum.Enum):
     HEPG2 = "HEPG2"
     U2OS = "U2OS"
     RPE = "RPE"
+    ALL = "ALL"

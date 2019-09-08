@@ -21,7 +21,7 @@ class MultiGenerator(Sequence):
                  height=224, width=224,
                  mix=False, augment=False, do_one_hot=False):
         self.image_filenames = image_filenames["img_path_root"]
-        cell_types = None  # image_filenames["cell_type"]
+        cell_types = None
         self.height = height
         self.width = width
 
@@ -149,3 +149,39 @@ class MultiGenerator(Sequence):
             return xs, batch_y
 
         return [x for x in batch_images], batch_y
+
+
+class TestMultiGenerator(Sequence):
+    def __init__(self, image_filenames,
+                 batch_size,
+                 class_count=1108,
+                 height=224, width=224):
+        self.image_filenames = image_filenames
+        self.height = height
+        self.width = width
+        self.batch_size = batch_size
+
+    def __len__(self):
+        return int(np.ceil(len(self.image_filenames) / float(self.batch_size)))
+
+    def __getitem__(self, idx):
+        batch_x = self.image_filenames[idx *
+                                       self.batch_size:(idx + 1) * self.batch_size]
+
+        return self.test_generate(batch_x)
+
+    def test_generate(self, batch_x):
+        batch_images = []
+
+        for sample in batch_x:
+            imgs = []
+            for i in range(1, 7):
+                img = cv2.imread(f"{sample}_w{i}.png")
+
+                imgs.append(img)
+            batch_images.append(imgs)
+
+        batch_images = np.transpose(
+            np.array(batch_images, np.float32)/255, axes=(1, 0, 2, 3, 4))
+
+        return [x for x in batch_images]

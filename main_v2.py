@@ -32,53 +32,6 @@ INPUTS = 6
 # loading from dataframe https://medium.com/@vijayabhaskar96/tutorial-on-keras-flow-from-dataframe-1fd4493d237c
 
 
-def generate_dataframe_from_csv_vertical(path, inputs=INPUTS):
-    data = pd.read_csv(path)
-    columns = (data.apply(lambda r: pd.Series(gen_image_paths_vertical(r, inputs)), axis=1)
-               .stack()
-               .rename("img_path")
-               .reset_index(level=1, drop=True))
-    data["sirna"] = data["sirna"].apply(lambda s: str(s))
-    return data.join(columns).reset_index(drop=True)
-
-
-def gen_image_paths_vertical(row, inputs=INPUTS):
-    path_root = f"train/{row['experiment']}/Plate{row['plate']}/{row['well']}"
-    return [f"{path_root}_s{site}_w{image}.png" for site in range(1, 3) for image in range(1, 1+inputs)]
-
-
-def gen_image_paths_horizontal(row):
-    path_root = f"train/{row['experiment']}/Plate{row['plate']}/{row['well']}"
-    return [f"{path_root}_s{site}" for site in range(1, 3)]
-
-
-def generate_dataframe_from_csv_horizontal(path, inputs=INPUTS, root_name_only=False):
-    data = pd.read_csv(path)
-    columns = (data.apply(lambda r: pd.Series(gen_image_paths_horizontal(r)), axis=1)
-               .stack()
-               .rename("img_path_root")
-               .reset_index(level=1, drop=True))
-    data["sirna"] = data["sirna"].apply(lambda s: str(s))
-    data = data.join(columns).reset_index(drop=True)
-
-    if not root_name_only:
-        for i in range(1, 1+inputs):
-            data[f"img_path_{i}"] = data.apply(
-                lambda row: f"{row['img_path']}_w{i}.png", axis=1)
-    return data
-
-
-def get_model_inputs(df):
-    trainY = df["sirna"]
-    im_paths = df["img_path"].apply(
-        lambda r: [f"{r}_w{image}.png" for image in range(1, 7)])
-    splits = np.hsplit(np.stack(np.array(im_paths)), 6)
-
-    images = [np.hstack(s) for s in splits]
-
-    return (images, trainY)
-
-
 def create_multi_generator(df, train_datagen, subset):
     gens = []
     for i in range(1, INPUTS + 1):
@@ -101,17 +54,6 @@ def build_cnn_layer(i, shape=(HEIGHT, WIDTH, 3,)):
     name = f"inputlayer_{i}"
     inputlayer = Input(shape=shape, name=name)
 
-    # x = Conv2D(filters=16, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(inputlayer)
-    # x = BatchNormalization(name=f"bn_cnn_1_{i}")(x)
-    # x = MaxPooling2D(pool_size=2)(x)
-
-    # x = Conv2D(filters=32, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(x)
-    # x = BatchNormalization(name=f"bn_cnn_2_{i}")(x)
-    # x = MaxPooling2D(pool_size=2)(x)
-    # x = Conv2D(filters=32, kernel_size=5, padding='same', kernel_initializer="he_uniform", activation='relu')(inputlayer)
-    # x = BatchNormalization(name=f"bn_cnn_1_{i}")(x)
-    # x = MaxPooling2D(pool_size=2)(x)
-
     x = Conv2D(filters=64, kernel_size=5, padding='same',
                kernel_initializer="he_uniform", activation='relu')(inputlayer)
     x = BatchNormalization(name=f"bn_cnn_2_{i}")(x)
@@ -131,35 +73,6 @@ def build_cnn_layer(i, shape=(HEIGHT, WIDTH, 3,)):
                kernel_initializer="he_uniform", activation='relu')(x)
     x = BatchNormalization(name=f"bn_cnn_5_{i}")(x)
     x = GlobalAveragePooling2D()(x)
-
-    # x = Conv2D(filters=1024, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(x)
-    # x = BatchNormalization(name=f"bn_cnn_7_{i}")(x)
-    # x = MaxPooling2D(pool_size=2)(x)
-
-    # x = Conv2D(filters=2048, kernel_size=3, padding='same', kernel_initializer="he_uniform", activation='relu')(x)
-    # x = BatchNormalization(name=f"bn_cnn_5_{i}")(x)
-    # x = MaxPooling2D(pool_size=2)(x)
-
-    # x = Conv2D(filters=64, kernel_size=3, padding='same')(inputlayer)
-    # x = Activation("relu")(x)
-    # x = BatchNormalization(name=f"bn_cnn_1_{i}")(x)
-    # x = MaxPooling2D(pool_size=2)(x)
-
-    # x = Conv2D(filters=128, kernel_size=3, padding='same')(x)
-    # x = Activation("relu")(x)
-    # x = BatchNormalization(name=f"bn_cnn_2_{i}")(x)
-    # x = MaxPooling2D(pool_size=2)(x)
-
-    # x = Conv2D(filters=256, kernel_size=3, padding='same')(x)
-    # x = Activation("relu")(x)
-    # x = BatchNormalization(name=f"bn_cnn_3_{i}")(x)
-    # x = MaxPooling2D(pool_size=2)(x)
-
-    # x = Flatten(name=f"flattener_{i}")(x)
-    # x = Dense(2000, activation="relu")(x)
-    # x = BatchNormalization(name="bn_fc_1")(x)
-    # x = Dropout(0.25)(x)
-    # x = Dense(1108, activation="softmax")(x)
 
     model = Model(inputs=inputlayer, outputs=x)
     return model
@@ -393,9 +306,9 @@ def build_cell_multi_model(cell_model_path, height=HEIGHT, width=WIDTH):
     return model
 
 
-def build_transfer_multi_model(model_path, height=HEIGHT, width=WIDTH):
+def build_transfer_multi_model(model_path, locked_layers=0, height=HEIGHT, width=WIDTH):
     base_model = models.load_model(model_path)
-    base_model.trainable = False
+    # base_model.trainable = False
 
     # Pop off concatenate - dense_2 layers, leaving at flattened
     base_model.layers.pop()  # dense_2
@@ -403,7 +316,8 @@ def build_transfer_multi_model(model_path, height=HEIGHT, width=WIDTH):
     base_model.layers.pop()  # batch_norm_1
     base_model.layers.pop()  # dense_1
     # base_model.layers.pop()  # concatenate_1
-
+    for layer in base_model.layers[:locked_layers]:
+        layer.trainable = False
     # pop off 6 flatten layers
     # base_model.layers.pop()
     # base_model.layers.pop()
@@ -417,16 +331,15 @@ def build_transfer_multi_model(model_path, height=HEIGHT, width=WIDTH):
 
     # combined = Concatenate()([x for x in layers])
 
-    combined = Dense(2000, kernel_regularizer=l2(
-        0.001), activation="relu")(combined)
-    combined = BatchNormalization(name="batch_norm_1")(combined)
-    combined = Dropout(0.3)(combined)
-    output_layer = Dense(1108, kernel_regularizer=l2(
+    combined = Dense(1000, name="x_dense_1", kernel_regularizer=l2(
+        0.001), activation="relu")(base_model.layers[-1].output)
+    combined = BatchNormalization(name="x_batch_norm_1")(combined)
+    combined = Dropout(0.3, name="x_dropout_1")(combined)
+    output_layer = Dense(1108, name="x_dense_2", kernel_regularizer=l2(
         0.001), activation="softmax")(combined)
 
     model = Model(inputs=base_model.input, outputs=output_layer)
-    optimizer = optimizers.Nadam()
-    model.compile(optimizer, loss='categorical_crossentropy',
+    model.compile(optimizers.Nadam(), loss='categorical_crossentropy',
                   metrics=['accuracy'])
     # model.summary()
     return model

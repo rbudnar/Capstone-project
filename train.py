@@ -7,7 +7,7 @@ import seaborn as sb
 import keras
 from keras import optimizers
 from keras.preprocessing.image import ImageDataGenerator
-from keras.models import Sequential, Model
+from keras.models import Sequential, Model, load_model
 from keras.layers import Input, Conv2D, MaxPooling2D, Activation, Dropout, Flatten, Dense, Add, Concatenate
 from keras.layers.normalization import BatchNormalization
 from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau, CSVLogger
@@ -16,10 +16,12 @@ import timeit
 import os
 from datetime import datetime
 import tensorflow as tf
-from main_v2 import (generate_dataframe_from_csv_horizontal, generate_dataframe_from_csv_vertical,
-                     get_model_inputs, create_multi_generator, build_model, build_multi_model, build_vgg_model, build_resnet_model, build_cell_classifier_model, build_cell_multi_model, build_transfer_multi_model)
+from main_v2 import (create_multi_generator, build_model, build_multi_model, build_vgg_model,
+                     build_resnet_model, build_cell_classifier_model, build_cell_multi_model, build_transfer_multi_model)
+from preprocessing import (generate_dataframe_from_csv_horizontal, generate_dataframe_from_csv_vertical,
+                           get_model_inputs)
 from math import ceil
-from data_generator_from_kaggle import MultiGenerator
+from data_generator_from_kaggle import MultiGenerator, TestMultiGenerator
 import wandb
 from wandb.keras import WandbCallback
 from sklearn.model_selection import train_test_split
@@ -63,7 +65,8 @@ class TrainingRunner:
                  height=HEIGHT,
                  width=WIDTH,
                  resume=False,
-                 cell_type=None):
+                 locked_layers=0,
+                 cell_type=CellType.ALL):
 
         self.use_wandb = use_wandb
         self.use_tb = use_tb
@@ -84,6 +87,8 @@ class TrainingRunner:
             self.height = wandb.config.height
             self.width = wandb.config.width
             self.cell_type = wandb.config.cell_type
+            self.model_path = wandb.config.model_path
+            self.locked_layers = wandb.config.locked_layers
         else:
             self.filename = filename
             self.valid_split = val_split
@@ -94,6 +99,8 @@ class TrainingRunner:
             self.height = HEIGHT
             self.width = WIDTH
             self.cell_type = cell_type
+            self.model_path = model_path
+            self.locked_layers = locked_layers
 
         print(
             self.valid_split,
@@ -101,8 +108,10 @@ class TrainingRunner:
             self.train_mode,
             self.batch_size,
             self.epochs,
+            self.cell_type,
             self.height,
-            self.width
+            self.width,
+            self.model_path
         )
 
         self.time_stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -111,12 +120,15 @@ class TrainingRunner:
         df = pd.read_csv(self.filename,  dtype={'sirna': object})
 
         if train_mode is TrainingMode.MULTI:
-            self.create_multi_model(df, model_path, use_mlp=use_mlp)
+            self.create_multi_model(df, use_mlp=use_mlp)
         elif train_mode is TrainingMode.CELL_ONLY:
             self.create_cell_model(df)
         elif train_mode is TrainingMode.CELL_MULTI:
-            self.create_multi_model(df, model_path, use_mlp=use_mlp,
+            self.create_multi_model(df, use_mlp=use_mlp,
                                     use_cell_model=True, cell_model_path=cell_model_path)
+        elif train_mode is TrainingMode.TEST_ONLY:
+            assert(self.model_path is not None)
+            self.model = load_model(self.model_path)
         else:
             self.create_simple_model(df)
 
@@ -124,10 +136,10 @@ class TrainingRunner:
         if(self.model):
             self.model.summary()
 
-    def create_multi_model(self, df, model_path=None, use_cell_model=False, cell_model_path=CELL_MODEL_PATH, use_mlp=False):
+    def create_multi_model(self, df, use_cell_model=False, cell_model_path=CELL_MODEL_PATH, use_mlp=False):
         ''' Creates a model that trains on each of set of 6 images. Can use the cell classifier model for transfer learning.
         '''
-        if self.cell_type is not None:
+        if self.cell_type is not None and self.cell_type is not "ALL":
             rows = df[df["cell_type"] == self.cell_type]
             x = rows[["img_path_root", "cell_type"]]
             y = rows["sirna"]
@@ -157,20 +169,21 @@ class TrainingRunner:
                 cell_model_path, height=self.height, width=self.width)
         else:
             if self.resume:
-                print(f"loading model from {model_path}")
-                self.model = keras.models.load_model(model_path)
+                print(f"loading model from {self.model_path}")
+                self.model = keras.models.load_model(self.model_path)
                 if use_wandb:
                     self.initial_epoch = wandb.run.step
                 else:
                     self.initial_epoch = int(
-                        model_path[model_path.find("=")+1:model_path.rfind("=")])
+                        self.model_path[self.model_path.find("=")+1:self.model_path.rfind("=")])
                 print(self.initial_epoch)
             else:
-                print("creating new multi model")
-                if model_path is not None:
+                if self.model_path is not None:
+                    print("creating transfer multi model")
                     self.model = build_transfer_multi_model(
-                        height=self.height, width=self.width, controls_only=self.controls_only)
+                        self.model_path, locked_layers=self.locked_layers, height=self.height, width=self.width)
                 else:
+                    print("creating new multi model")
                     self.model = build_multi_model(
                         height=self.height, width=self.width, controls_only=self.controls_only)
 
@@ -225,6 +238,19 @@ class TrainingRunner:
         self.steps_valid = self.valid_generator.__len__()
         self.model = build_cell_classifier_model()
 
+    def predict(self, filepath):
+        assert(self.model is not None)
+        df = pd.read_csv(filepath)
+        if self.cell_type is not None:
+            x = df[df["cell_type"] == self.cell_type]["img_path_root"]
+        else:
+            x = df["img_path_root"]
+
+        self.test_generator = TestMultiGenerator(x, self.batch_size)
+        self.steps = self.test_generator.__len__()
+        print(x, self.steps, self.cell_type)
+        return self.model.predict_generator(self.test_generator, steps=self.steps)
+
     def evaluate(self):
         ''' Just for checking model loading for now
         '''
@@ -259,7 +285,7 @@ class TrainingRunner:
         if self.train_mode is TrainingMode.CELL_ONLY:
             checkpoint_path = f"saved_models/cell_model.weights.{self.time_stamp}"
         else:
-            checkpoint_path = f"saved_models/weights.{self.time_stamp}"
+            checkpoint_path = f"saved_models/weights.{self.cell_type}.{self.time_stamp}"
 
         print("checkpoint path: ", checkpoint_path)
         callbacks.append(ModelCheckpoint(filepath=checkpoint_path +
