@@ -160,7 +160,7 @@ class TrainingRunner:
         self.train_generator = MultiGenerator(
             self.train_x, self.train_y, self.batch_size, class_count=class_count, augment=True, is_train=True, height=self.height, width=self.width)
         self.valid_generator = MultiGenerator(
-            self.valid_x, self.valid_y, self.batch_size, class_count=class_count, height=self.height, width=self.width)
+            self.valid_x, self.valid_y, self.batch_size, class_count=class_count, is_train=False, height=self.height, width=self.width)
         self.steps = self.train_generator.__len__()
         self.steps_valid = self.valid_generator.__len__()
         if use_cell_model:
@@ -242,14 +242,43 @@ class TrainingRunner:
         assert(self.model is not None)
         df = pd.read_csv(filepath)
         if self.cell_type is not None:
-            x = df[df["cell_type"] == self.cell_type]["img_path_root"]
-        else:
-            x = df["img_path_root"]
+            df = df[df["cell_type"] == self.cell_type].reset_index(drop=True)
+
+        x = df["img_path_root"]
 
         self.test_generator = TestMultiGenerator(x, self.batch_size)
         self.steps = self.test_generator.__len__()
-        print(x, self.steps, self.cell_type)
-        return self.model.predict_generator(self.test_generator, steps=self.steps)
+        # generate predictions
+        results = self.model.predict_generator(
+            self.test_generator, steps=self.steps, verbose=1)
+
+        # process predictions
+        predictions = self.prepare_results_from_predictions(results, df)
+
+        self.save_prediction_file(
+            predictions, f"predictions.{self.cell_type}.csv")
+
+        return predictions
+
+    def prepare_results_from_predictions(self, results, original_df):
+        df = pd.DataFrame(results)
+        # find most likely treatment from a given sample and add create a dataframe from it and its p value
+        bests = df.apply(lambda x: pd.Series(
+            [str(np.argmax(x)), x[np.argmax(x)]]), axis=1)
+        # label our columns
+        bests.columns = ["sirna", "p"]
+        # merge predictions back to original dataframe containing id_code and cell_type
+        output = pd.concat([original_df, bests], axis=1)
+
+        # at this point we have two samples for each well; we need to determine the highest probability treatment of these two for submission
+        # determine indexes of highest probability treatment
+        idxs = output.groupby(["id_code"])["p"].transform(max) == output["p"]
+        # filter and return by our best guess treatment
+        return output[idxs].reset_index(drop=True)
+
+    def save_prediction_file(self, df, dest_filename):
+        data_for_upload = df.filter(items=["id_code", "sirna"]).to_csv(
+            dest_filename, index=False)
 
     def evaluate(self):
         ''' Just for checking model loading for now
@@ -262,7 +291,7 @@ class TrainingRunner:
 
         callbacks = []
 
-        # # callbacks.append(ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, verbose=1, mode='auto', min_delta=0.0001))
+        # callbacks.append(ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, verbose=1, mode='auto', min_delta=0.0001))
 
         total_steps = int(self.epochs * self.train_generator.__len__())
         warmup_epoch = 10
@@ -282,10 +311,19 @@ class TrainingRunner:
 
         # callbacks.append(LRTensorBoard(logdir))
 
+        # if self.train_mode is TrainingMode.CELL_ONLY:
+        #     checkpoint_path = f"saved_models/cell_model.weights.{self.time_stamp}"
+        # else:
+        #     checkpoint_path = f"saved_models/weights.{self.cell_type}.{self.time_stamp}"
+
         if self.train_mode is TrainingMode.CELL_ONLY:
-            checkpoint_path = f"saved_models/cell_model.weights.{self.time_stamp}"
+            modifier = "cell_model."
+        elif self.controls_only:
+            modifier = "controls."
         else:
-            checkpoint_path = f"saved_models/weights.{self.cell_type}.{self.time_stamp}"
+            modifier = ""
+
+        checkpoint_path = f"saved_models/weights.{modifier}{self.cell_type}.{self.time_stamp}"
 
         print("checkpoint path: ", checkpoint_path)
         callbacks.append(ModelCheckpoint(filepath=checkpoint_path +

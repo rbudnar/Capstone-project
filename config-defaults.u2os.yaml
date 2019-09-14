@@ -18,7 +18,7 @@ train_mode:
   desc: Whether to train single image (1), 6 image (2).
   value: 2
 cell_type:
-  value: HEPG2
+  value: U2OS
 locked_layers:
   value: 0
   desc: Conv blocks are each 3 layers each - Conv2D + BatchNorm + Pooling layer.

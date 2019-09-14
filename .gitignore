@@ -272,3 +272,4 @@ rxrx1-utils-master/**/*.*
 rxrx1-utils-master/license
 *.zip
 *.tfrecord
+predictions*

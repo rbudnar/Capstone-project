@@ -111,9 +111,6 @@ class MultiGenerator(Sequence):
 
             batch_images.append(imgs)
 
-        # return batch_x, batch_y
-        # return batch_images, batch_y
-
         batch_images = np.transpose(
             np.array(batch_images, np.float32)/255, axes=(1, 0, 2, 3, 4))
         # batch_images = np.transpose(((np.transpose(np.array(batch_images, np.float32), axes=(0,2,3,4,1)) - MEANS) / STDS), axes=(4,0,1,2,3))
@@ -134,9 +131,10 @@ class MultiGenerator(Sequence):
         for (sample, label) in zip(batch_x, batch_y):
             imgs = []
             for i in range(1, 7):
-                img = cv2.imread(f"{sample}_w{i}.png")
-
+                img = cv2.resize(cv2.imread(
+                    f"{sample}_w{i}.png"), (self.height, self.width))
                 imgs.append(img)
+
             batch_images.append(imgs)
         batch_images = np.transpose(
             np.array(batch_images, np.float32)/255, axes=(1, 0, 2, 3, 4))
@@ -176,11 +174,12 @@ class TestMultiGenerator(Sequence):
         for sample in batch_x:
             imgs = []
             for i in range(1, 7):
-                img = cv2.imread(f"{sample}_w{i}.png")
+                img = cv2.resize(cv2.imread(
+                    f"{sample}_w{i}.png"), (self.height, self.width))
 
                 imgs.append(img)
             batch_images.append(imgs)
-
+        imgs = np.array(batch_images, np.float32)/255
         batch_images = np.transpose(
             np.array(batch_images, np.float32)/255, axes=(1, 0, 2, 3, 4))
 

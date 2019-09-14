@@ -15,19 +15,19 @@ def generate_dataframe_from_csv_vertical(path, inputs=INPUTS):
     return data.join(columns).reset_index(drop=True)
 
 
-def gen_image_paths_vertical(row, inputs=INPUTS):
-    path_root = f"train/{row['experiment']}/Plate{row['plate']}/{row['well']}"
+def gen_image_paths_vertical(row, folder="train", inputs=INPUTS):
+    path_root = f"{folder}/{row['experiment']}/Plate{row['plate']}/{row['well']}"
     return [f"{path_root}_s{site}_w{image}.png" for site in range(1, 3) for image in range(1, 1+inputs)]
 
 
-def gen_image_paths_horizontal(row):
-    path_root = f"train/{row['experiment']}/Plate{row['plate']}/{row['well']}"
+def gen_image_paths_horizontal(row, folder="train"):
+    path_root = f"{folder}/{row['experiment']}/Plate{row['plate']}/{row['well']}"
     return [f"{path_root}_s{site}" for site in range(1, 3)]
 
 
-def generate_dataframe_from_csv_horizontal(path, inputs=INPUTS, root_name_only=False):
+def generate_dataframe_from_csv_horizontal(path, folder="train", inputs=INPUTS, root_name_only=False):
     data = pd.read_csv(path)
-    columns = (data.apply(lambda r: pd.Series(gen_image_paths_horizontal(r)), axis=1)
+    columns = (data.apply(lambda r: pd.Series(gen_image_paths_horizontal(r, folder)), axis=1)
                .stack()
                .rename("img_path_root")
                .reset_index(level=1, drop=True))
@@ -41,6 +41,10 @@ def generate_dataframe_from_csv_horizontal(path, inputs=INPUTS, root_name_only=F
             data[f"img_path_{i}"] = data.apply(
                 lambda row: f"{row['img_path']}_w{i}.png", axis=1)
     return data
+
+
+def gen_cell_type_col(df):
+    df["cell_type"] = df.experiment.apply(lambda r: r[:r.find("-")])
 
 
 def get_model_inputs(df):
