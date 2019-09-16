@@ -26,7 +26,7 @@ in train-wb.py with the desired options.
 To run the project using wandb, run this command from the command line after logging in with your wandb account (its free - sign up at www.wandb.com):
 `wandb run python train-wb.py`
 
-The CSV files has been preprocessed and re-saved for ease of training and testing. When using the multi-generator, use:
+The CSV files have been preprocessed and re-saved for ease of training and testing. When using the multi-generator, use:
 `train_root.csv` for training full data
 `test_root.csv` for testing
 `train_controls_root.csv` for using training control data
