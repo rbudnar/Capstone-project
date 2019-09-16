@@ -273,3 +273,4 @@ rxrx1-utils-master/license
 *.zip
 *.tfrecord
 predictions*
+.vscode*

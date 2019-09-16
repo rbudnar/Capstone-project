@@ -4,7 +4,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from IPython.display import display  # Allows the use of display() for DataFrames
 import seaborn as sb
-
 import keras
 from keras import optimizers, models, layers
 from keras.preprocessing.image import ImageDataGenerator
@@ -18,7 +17,6 @@ import os
 import tensorflow as tf
 
 from keras.applications.resnet50 import ResNet50
-# these are not found
 # from keras.applications.resnet import ResNet152
 # from keras.applications.resnet_v2 import ResNet152V2
 # from keras.applications.DenseNet121 import DenseNet121
@@ -29,7 +27,12 @@ from keras.preprocessing import image
 HEIGHT = 224
 WIDTH = 224
 INPUTS = 6
-# loading from dataframe https://medium.com/@vijayabhaskar96/tutorial-on-keras-flow-from-dataframe-1fd4493d237c
+
+
+"""
+This file contains the main logic for how the neural network is built.
+There are a number of experiments and usages here.
+"""
 
 
 def create_multi_generator(df, train_datagen, subset):
@@ -80,13 +83,11 @@ def build_cnn_layer(i, shape=(HEIGHT, WIDTH, 3,)):
 
 def build_sequential_layer(previous_layers):
     combined = Concatenate()([x.output for x in previous_layers])
-    combined = Dense(1000, kernel_regularizer=l2(
-        0.001), activation="relu")(combined)
+    combined = Dense(1000, kernel_regularizer=l2(0.001), activation="relu")(combined)
     combined = BatchNormalization(name="batch_norm_1")(combined)
     combined = Dropout(0.3)(combined)
     # combined = Activation("relu", name="act_layer")(combined)
-    z = Dense(1108, kernel_regularizer=l2(0.001),
-              activation="softmax")(combined)
+    z = Dense(1108, kernel_regularizer=l2(0.001), activation="softmax")(combined)
     return z
 
 
@@ -102,25 +103,21 @@ def build_sequential_layer_controls(previous_layers, use_mlp=False):
     # combined = Dense(120, kernel_regularizer=l2(0.001), activation="relu")(combined)
     # combined = BatchNormalization()(combined)
     # combined = Dropout(0.3)(combined)
-    combined = Dense(60, kernel_regularizer=l2(
-        0.001), activation="relu")(combined)
+    combined = Dense(60, kernel_regularizer=l2(0.001), activation="relu")(combined)
     combined = BatchNormalization()(combined)
     combined = Dropout(0.3)(combined)
     z = Dense(31, activation="softmax")(combined)
     return z
 
-# https://towardsdatascience.com/why-default-cnn-are-broken-in-keras-and-how-to-fix-them-ce295e5e5f2
-
 
 def ConvBlock(n_conv, n_out, shape, x, is_last=False, name=None):
     for i in range(n_conv):
         if name is not None:
-            x = Conv2D(n_out, shape, padding='same', name=name,
-                       kernel_initializer="he_uniform", activation='relu')(x)
+            # use of he_uniform as suggested by: https://towardsdatascience.com/why-default-cnn-are-broken-in-keras-and-how-to-fix-them-ce295e5e5f2
+            x = Conv2D(n_out, shape, padding='same', name=name, kernel_initializer="he_uniform", activation="relu")(x)
             x = BatchNormalization(name=f"bn_{name}")(x)
         else:
-            x = Conv2D(n_out, shape, padding='same',
-                       kernel_initializer="he_uniform", activation='relu')(x)
+            x = Conv2D(n_out, shape, padding='same', kernel_initializer="he_uniform", activation="relu")(x)
             x = BatchNormalization()(x)
 
     if is_last:
@@ -129,8 +126,6 @@ def ConvBlock(n_conv, n_out, shape, x, is_last=False, name=None):
         out = MaxPooling2D()(x)
 
     return out
-
-# VGG16
 
 
 def build_cnn_layer_vgg(i, shape=(HEIGHT, WIDTH, 3,)):
@@ -151,8 +146,7 @@ def build_cnn_layer_vgg(i, shape=(HEIGHT, WIDTH, 3,)):
 
 def build_vgg_model(shape=(HEIGHT, WIDTH, 3,)):
     # https://github.com/fchollet/deep-learning-with-python-notebooks/blob/master/5.3-using-a-pretrained-convnet.ipynb
-    base_model = VGG16(weights='imagenet',
-                       include_top=False, input_shape=shape)
+    base_model = VGG16(weights='imagenet', include_top=False, input_shape=shape)
     model = Sequential()
     model.add(base_model)
     model.add(Flatten())
@@ -203,15 +197,14 @@ def build_resnet_model(shape=(HEIGHT, WIDTH, 3,)):
 
 def build_cnn_layer_3(i, shape=(HEIGHT, WIDTH, 3,)):
     inputlayer = Input(shape=shape)
-    x = ConvBlock(1, 16, (5, 5), inputlayer)
+    x = ConvBlock(1, 16, (3, 3), inputlayer)
     x = ConvBlock(1, 32, (3, 3), x)
-    # x = ConvBlock(1, 32, (5, 5), inputlayer)
     x = ConvBlock(1, 64, (3, 3), x)
     x = ConvBlock(1, 128, (3, 3), x)
     x = ConvBlock(1, 256, (3, 3), x)
-    x = ConvBlock(1, 512, (3, 3), x)
-    # x = ConvBlock(1, 1024, (3, 3), x)
-    x = Flatten()(x)
+    x = ConvBlock(1, 512, (3, 3), x, is_last=True)
+    # x = ConvBlock(1, 1024, (3, 3), x, is_last=True)
+    # x = Flatten()(x)
     model = Model(inputlayer, x)
     return model
 
@@ -219,8 +212,7 @@ def build_cnn_layer_3(i, shape=(HEIGHT, WIDTH, 3,)):
 def build_model(height=HEIGHT, width=WIDTH):
     model = build_cnn_layer_vgg(1, shape=(height, width, 3))
     optimizer = optimizers.Adam()
-    model.compile(optimizer, loss='categorical_crossentropy',
-                  metrics=['accuracy'])
+    model.compile(optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
     return model
 
 
@@ -231,16 +223,14 @@ def build_multi_model(height=HEIGHT, width=WIDTH, controls_only=False, use_mlp=F
         cnn_layers.append(layer)
 
     if controls_only:
-        output_layer = build_sequential_layer_controls(
-            cnn_layers, use_mlp=use_mlp)
+        output_layer = build_sequential_layer_controls(cnn_layers, use_mlp=use_mlp)
     else:
         output_layer = build_sequential_layer(cnn_layers)
 
     model = Model(inputs=[x.input for x in cnn_layers], outputs=output_layer)
     optimizer = optimizers.Adam()
 
-    model.compile(optimizer, loss='categorical_crossentropy',
-                  metrics=['accuracy'])
+    model.compile(optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
     return model
 
 
@@ -252,18 +242,14 @@ def build_cell_classifier_model():
 
     combined = Concatenate()([x.output for x in cnn_layers])
 
-    combined = Dense(10, kernel_regularizer=l2(
-        0.001), activation="relu")(combined)
+    combined = Dense(10, kernel_regularizer=l2(0.001), activation="relu")(combined)
     combined = BatchNormalization(name="batch_norm_1")(combined)
     combined = Dropout(0.3)(combined)
-    output_layer = Dense(4, kernel_regularizer=l2(0.001),
-                         activation="softmax")(combined)
+    output_layer = Dense(4, kernel_regularizer=l2(0.001), activation="softmax")(combined)
 
     model = Model(inputs=[x.input for x in cnn_layers], outputs=output_layer)
     optimizer = optimizers.Nadam()
-    model.compile(optimizer, loss='categorical_crossentropy',
-                  metrics=['accuracy'])
-    # model.summary()
+    model.compile(optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
     return model
 
 
@@ -315,33 +301,18 @@ def build_transfer_multi_model(model_path, locked_layers=0, height=HEIGHT, width
     base_model.layers.pop()  # dropout_1
     base_model.layers.pop()  # batch_norm_1
     base_model.layers.pop()  # dense_1
-    # base_model.layers.pop()  # concatenate_1
+
     for layer in base_model.layers[:locked_layers]:
         layer.trainable = False
-    # pop off 6 flatten layers
-    # base_model.layers.pop()
-    # base_model.layers.pop()
-    # base_model.layers.pop()
-    # base_model.layers.pop()
-    # base_model.layers.pop()
-    # base_model.layers.pop()
 
-    # layers = [build_connected_layers(base_model.get_layer(
-    #     f"max_pooling2d_{i*6}").output, name=f"cv_block_sirna_{i}") for i in range(1, 7)]
-
-    # combined = Concatenate()([x for x in layers])
-
-    combined = Dense(1000, name="x_dense_1", kernel_regularizer=l2(
-        0.001), activation="relu")(base_model.layers[-1].output)
+    combined = Dense(1000, name="x_dense_1", kernel_regularizer=l2(0.001), activation="relu")(base_model.layers[-1].output)
     combined = BatchNormalization(name="x_batch_norm_1")(combined)
     combined = Dropout(0.3, name="x_dropout_1")(combined)
-    output_layer = Dense(1108, name="x_dense_2", kernel_regularizer=l2(
-        0.001), activation="softmax")(combined)
+    output_layer = Dense(1108, name="x_dense_2", kernel_regularizer=l2(0.001), activation="softmax")(combined)
 
     model = Model(inputs=base_model.input, outputs=output_layer)
     model.compile(optimizers.Nadam(), loss='categorical_crossentropy',
                   metrics=['accuracy'])
-    # model.summary()
     return model
 
 

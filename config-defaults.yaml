@@ -1,7 +1,7 @@
 epochs:
-  value: 400
+  value: 200
 batch_size:
-  value: 32
+  value: 16
 val_split:
   value: .2
 height:

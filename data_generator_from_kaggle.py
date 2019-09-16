@@ -6,10 +6,12 @@ from sklearn.utils import class_weight, shuffle
 import imgaug.augmenters as iaa
 
 # taken from https://github.com/recursionpharma/rxrx1-utils/blob/master/rxrx/main.py#L51
-MEANS = np.array([6.74696984, 14.74640167, 10.51260864,
-                  10.45369445,  5.49959796, 9.81545561])
-STDS = np.array([7.95876312, 12.17305868, 5.86172946,
-                 7.83451711, 4.701167, 5.43130431])
+MEANS = np.array([6.74696984, 14.74640167, 10.51260864, 10.45369445, 5.49959796, 9.81545561])
+STDS = np.array([7.95876312, 12.17305868, 5.86172946, 7.83451711, 4.701167, 5.43130431])
+
+"""
+This file contains the custom data generators to be able to feed the network 6 images in parallel.
+"""
 
 
 # https://www.kaggle.com/chandyalex/recursion-cellular-keras-densenet
@@ -46,14 +48,11 @@ class MultiGenerator(Sequence):
         return int(np.ceil(len(self.image_filenames) / float(self.batch_size)))
 
     def __getitem__(self, idx):
-        batch_x = self.image_filenames[idx *
-                                       self.batch_size:(idx + 1) * self.batch_size]
-        batch_y = self.labels[idx *
-                              self.batch_size:(idx + 1) * self.batch_size]
+        batch_x = self.image_filenames[idx * self.batch_size:(idx + 1) * self.batch_size]
+        batch_y = self.labels[idx * self.batch_size:(idx + 1) * self.batch_size]
         batch_cell_types = None
         if self.cell_types is not None:
-            batch_cell_types = self.cell_types[idx *
-                                               self.batch_size:(idx + 1) * self.batch_size]
+            batch_cell_types = self.cell_types[idx * self.batch_size:(idx + 1) * self.batch_size]
 
         if(self.is_train):
             return self.train_generate(batch_x, batch_y, batch_cell_types)
