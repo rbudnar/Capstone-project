@@ -66,7 +66,7 @@ class TrainingRunner:
                  width=WIDTH,
                  resume=False,
                  locked_layers=0,
-                 cell_type=CellType.ALL):
+                 cell_type="ALL"):
 
         self.use_wandb = use_wandb
         self.use_tb = use_tb
@@ -291,6 +291,7 @@ class TrainingRunner:
 
         callbacks = []
 
+        # removed in favor of WarmUpCosineDecayScheduler
         # callbacks.append(ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, verbose=1, mode='auto', min_delta=0.0001))
 
         total_steps = int(self.epochs * self.train_generator.__len__())
@@ -305,16 +306,11 @@ class TrainingRunner:
                                                     warmup_steps=warmup_steps,
                                                     hold_base_rate_steps=0, verbose=0))
 
-        # # callbacks.append(EarlyStopping(monitor="val_loss",
-    # #               mode="min",
-    # #               patience=20))
+        # removed in favor of WarmUpCosineDecayScheduler
+        # # callbacks.append(EarlyStopping(monitor="val_loss", mode="min", patience=20))
 
+        # removed in favor of wandb
         # callbacks.append(LRTensorBoard(logdir))
-
-        # if self.train_mode is TrainingMode.CELL_ONLY:
-        #     checkpoint_path = f"saved_models/cell_model.weights.{self.time_stamp}"
-        # else:
-        #     checkpoint_path = f"saved_models/weights.{self.cell_type}.{self.time_stamp}"
 
         if self.train_mode is TrainingMode.CELL_ONLY:
             modifier = "cell_model."
@@ -329,11 +325,9 @@ class TrainingRunner:
         callbacks.append(ModelCheckpoint(filepath=checkpoint_path +
                                          "={epoch:02d}={val_loss:.2f}.hdf5", verbose=1, monitor='val_loss', save_best_only=True))
 
-        # # callbacks = [checkpointer, reduceLROnPlat, early, csv_logger, tensorboard_callback]
         if self.use_wandb:
             callbacks.append(WandbCallback())
         if self.use_tb:
-            # , write_grads=True, histogram_freq=1
             callbacks.append(keras.callbacks.TensorBoard(log_dir=logdir))
 
         # ## workaround for `FailedPreconditionError: Attempting to use uninitialized value Adam/lr`
